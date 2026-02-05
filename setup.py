@@ -1,4 +1,5 @@
 from setuptools import setup, find_packages
+
 setup(
     name="egop_optimizer",
     version="0.1.0",

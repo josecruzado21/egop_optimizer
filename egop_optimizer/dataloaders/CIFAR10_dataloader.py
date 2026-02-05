@@ -9,8 +9,7 @@ import shutil
 from typing import Union
 from egop_optimizer.dataloaders.utils import stratified_split
 import logging
-# data_dir = Path(__file__).parent / ".." / ".." / "data"
-import logging
+
 
 def CIFAR10_cache_dataset(
     data_dir: str,
@@ -78,6 +77,7 @@ def CIFAR10_cache_dataset(
     if verbose:
         logger.info("Done caching.")
     return
+
 
 def CIFAR10_cached_dataloader(
     num_classes: int = 10,
@@ -151,6 +151,7 @@ def CIFAR10_cached_dataloader(
 
     return train_CIFAR10, dev_CIFAR10, test_CIFAR10
 
+
 def CIFAR10_uncached_dataloader(
     num_classes: int = 10,
     data_dir: str = None,
@@ -185,17 +186,21 @@ def CIFAR10_uncached_dataloader(
         mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010)
     )
     if augment:
-        transform_train = transforms.Compose([
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ])
+        transform_train = transforms.Compose(
+            [
+                transforms.RandomCrop(32, padding=4),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                normalize,
+            ]
+        )
     else:
-        transform_train = transforms.Compose([
-            transforms.ToTensor(),
-            normalize,
-        ])
+        transform_train = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                normalize,
+            ]
+        )
     transform_test = transforms.Compose([transforms.ToTensor(), normalize])
 
     # 2. Load datasets
@@ -249,6 +254,7 @@ def CIFAR10_uncached_dataloader(
 
     return train_CIFAR10, dev_CIFAR10, test_CIFAR10
 
+
 def CIFAR10_dataloader(
     batch_size: int = 128,
     num_classes: int = 10,
@@ -291,8 +297,10 @@ def CIFAR10_dataloader(
     if use_cached:
         save_dir_cached = data_dir / "cached_data" / "cached_CIFAR10"
         # Only create cached data if it doesn't exist or is empty
-        if not ((save_dir_cached / "train" / "train.pt").exists() and
-                (save_dir_cached / "test" / "test.pt").exists()):
+        if not (
+            (save_dir_cached / "train" / "train.pt").exists()
+            and (save_dir_cached / "test" / "test.pt").exists()
+        ):
             logger.info(
                 f"use_cached=True but cached data not found at {save_dir_cached}. Generating cached data now."
             )
