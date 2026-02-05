@@ -12,16 +12,17 @@ import pdb
 
 # Device management
 # from egop_optimizer.utils.device_utils import get_available_device
-from ..utils.device_utils import get_available_device
+from utils.device_utils import get_available_device
 
 DEVICE = get_available_device()
 
 
 # TODO: modify to automatically download from UCI site
 def get_MNIST_train_val_test_data(
-    data_dir=".../raw_data/optical_recognition_of_handwritten_digits/",
+    data_dir="../raw_data/optical_recognition_of_handwritten_digits/",
     train_val_test_split=[None, 0.33, 0.66],
     device=DEVICE,
+    verbose=False,
 ):
     rand_seed = 342
 
@@ -30,8 +31,8 @@ def get_MNIST_train_val_test_data(
             "tinyMHIST: Train split argument passed, but train size is fixed."
         )
 
-    test_path = data_dir + "/optdigits.tes"
-    train_path = data_dir + "/optdigits.tra"
+    test_path = os.path.join(data_dir, "optdigits.tes")
+    train_path = os.path.join(data_dir, "optdigits.tra")
     # Load directly
     train_array = pd.read_csv(train_path, header=None).to_numpy()
     test_array = pd.read_csv(test_path, header=None).to_numpy()
@@ -58,7 +59,10 @@ def get_MNIST_train_val_test_data(
     train_frac = trainX.shape[0] / (valX.shape[0] + trainX.shape[0] + testX.shape[0])
     val_frac = valX.shape[0] / (valX.shape[0] + trainX.shape[0] + testX.shape[0])
 
-    print(f"Train, validation, test relative size: {train_frac, val_frac, test_frac}")
+    if verbose:
+        print(
+            f"Train, validation, test relative size: {train_frac, val_frac, test_frac}"
+        )
 
     # Format as tensors and move to device
     trainX = torch.from_numpy(trainX).to(torch.float32).to(device)
@@ -91,8 +95,3 @@ def tinyMNIST_dataloader(batch_size, train_val_test_split=[None, 0.33, 0.66]):
         TensorDataset(testX, testY), batch_size=batch_size, shuffle=False
     )
     return trainloader, valloader, testloader
-
-
-if __name__ == "__main__":
-    get_MNIST_train_val_test_data()
-    pdb.set_trace()
