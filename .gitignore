@@ -66,3 +66,5 @@ coverage.xml
 *.pt
 *.tmp
 .DS_Store
+/new_egop_env
+/raw_data
