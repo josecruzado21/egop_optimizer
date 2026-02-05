@@ -3,6 +3,7 @@ from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 
 import os
+from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split as sk_train_test_split
 from tqdm.auto import tqdm
@@ -11,18 +12,18 @@ import random
 import pdb
 
 # Device management
-# from egop_optimizer.utils.device_utils import get_available_device
-from utils.device_utils import get_available_device
+from egop_optimizer.utils.device_utils import get_available_device
+
 
 DEVICE = get_available_device()
 
 
 # TODO: modify to automatically download from UCI site
 def get_MNIST_train_val_test_data(
-    data_dir="../raw_data/optical_recognition_of_handwritten_digits/",
     train_val_test_split=[None, 0.33, 0.66],
     device=DEVICE,
     verbose=False,
+    data_dir=None,
 ):
     rand_seed = 342
 
@@ -31,11 +32,21 @@ def get_MNIST_train_val_test_data(
             "tinyMHIST: Train split argument passed, but train size is fixed."
         )
 
+    # Locate raw_data folder, assumed to be in same folder as egop_optimizer
+    base = Path(__file__).resolve()
+    data_dir = (
+        base.parents[2] / "raw_data" / "optical_recognition_of_handwritten_digits"
+    )
     test_path = os.path.join(data_dir, "optdigits.tes")
     train_path = os.path.join(data_dir, "optdigits.tra")
     # Load directly
-    train_array = pd.read_csv(train_path, header=None).to_numpy()
-    test_array = pd.read_csv(test_path, header=None).to_numpy()
+    try:
+        train_array = pd.read_csv(train_path, header=None).to_numpy()
+        test_array = pd.read_csv(test_path, header=None).to_numpy()
+    except:
+        raise Exception(
+            f"Unable to load data. Verify the existence of data in folder: {data_dir}"
+        )
 
     # Labels are in last row of dataframe/array
     trainX = train_array[:, :-1]
@@ -95,3 +106,7 @@ def tinyMNIST_dataloader(batch_size, train_val_test_split=[None, 0.33, 0.66]):
         TensorDataset(testX, testY), batch_size=batch_size, shuffle=False
     )
     return trainloader, valloader, testloader
+
+
+if __name__ == "__main__":
+    tinyMNIST_dataloader(batch_size=128)
