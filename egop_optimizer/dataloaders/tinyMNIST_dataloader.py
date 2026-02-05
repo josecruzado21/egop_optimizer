@@ -8,6 +8,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split as sk_train_test_split
 from tqdm.auto import tqdm
 import random
+from ucimlrepo import fetch_ucirepo
 
 import pdb
 
@@ -18,37 +19,135 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 
+def download_and_save_MNIST(data_dir):
+
+    # fetch dataset from UCI repo
+    optical_recognition_of_handwritten_digits = fetch_ucirepo(id=80)
+
+    # data (as pandas dataframes)
+    X = optical_recognition_of_handwritten_digits.data.features
+    y = optical_recognition_of_handwritten_digits.data.targets
+
+    # Hardcode the train/test_and_val split used by UCI
+    n_train = 3823
+    n_test = 1797
+
+    # Split into train and test_and_val
+    X_train = X.iloc[:n_train]
+    y_train = y.iloc[:n_train]
+    X_test_and_val = X.iloc[-n_test:]
+    y_test_and_val = y.iloc[-n_test:]
+
+    # Make labels the last column of the array
+    combined_train_data = pd.concat([X_train, y_train], axis=1)
+    combined_test_data = pd.concat([X_test_and_val, y_test_and_val], axis=1)
+
+    # Save with expected names
+    data_dir = get_data_dir()
+    test_path = os.path.join(data_dir, "optdigits.tes")
+    train_path = os.path.join(data_dir, "optdigits.tra")
+
+    combined_train_data.to_csv(train_path, index=False, header=False)
+    combined_test_data.to_csv(test_path, index=False, header=False)
+
+    return
+
+
+# Checks that the train/test_and_val split which we manually perform on downloaded data is consistent
+# the default train test_and_val split for manually downloading separate csvs.
+# Requires one to download csv's manually from https://archive.ics.uci.edu/dataset/80/optical+recognition+of+handwritten+digits
+# and place in the location expected by get_data_dir().
+def check_donwload_has_same_train_test_split():
+    # fetch dataset from UCI repo
+    optical_recognition_of_handwritten_digits = fetch_ucirepo(id=80)
+
+    # data (as pandas dataframes)
+    X = optical_recognition_of_handwritten_digits.data.features
+    y = optical_recognition_of_handwritten_digits.data.targets
+
+    # Compare with downloaded csvs during development
+    data_dir = get_data_dir()
+    test_path = os.path.join(data_dir, "optdigits.tes")
+    train_path = os.path.join(data_dir, "optdigits.tra")
+    train_array = pd.read_csv(train_path, header=None).to_numpy()
+    test_array = pd.read_csv(test_path, header=None).to_numpy()
+    # Labels are in last row of dataframe/array
+    trainX = train_array[:, :-1]
+    trainY = train_array[:, -1]
+    # Take validation as subset of training data
+    test_and_val_X = test_array[:, :-1]
+    test_and_val_Y = test_array[:, -1]
+
+    n_train = len(trainX)
+    n_test = len(test_and_val_X)
+
+    # Split into train and test_and_val
+    X_train = X.iloc[:n_train]
+    y_train = y.iloc[:n_train]
+    X_test_and_val = X.iloc[-n_test:]
+    y_test_and_val = y.iloc[-n_test:]
+
+    # See whether data are consistent
+    assert np.array_equal(X_train.to_numpy(), trainX)
+    assert np.array_equal(y_train.to_numpy().flatten(), trainY)
+    assert np.array_equal(X_test_and_val.to_numpy(), test_and_val_X)
+    assert np.array_equal(y_test_and_val.to_numpy().flatten(), test_and_val_Y)
+    print("All data consistent!")
+    return
+
+
+def get_data_dir():
+    # Locate raw_data folder, assumed to be in same folder as egop_optimizer
+    base = Path(__file__).resolve()
+    data_dir = (
+        base.parents[2] / "raw_data" / "optical_recognition_of_handwritten_digits"
+    )
+    return data_dir
+
+
 # TODO: modify to automatically download from UCI site
 def get_MNIST_train_val_test_data(
     train_val_test_split=[None, 0.33, 0.66],
     device=DEVICE,
     verbose=False,
     data_dir=None,
+    seed=342,  # for controling random val/test splits
 ):
-    rand_seed = 342
 
     if train_val_test_split[0] is not None:
         raise Exception(
             "tinyMHIST: Train split argument passed, but train size is fixed."
         )
 
-    # Locate raw_data folder, assumed to be in same folder as egop_optimizer
-    base = Path(__file__).resolve()
-    data_dir = (
-        base.parents[2] / "raw_data" / "optical_recognition_of_handwritten_digits"
-    )
+    if data_dir is None:
+        data_dir = get_data_dir()
+    os.makedirs(data_dir, exist_ok=True)
     test_path = os.path.join(data_dir, "optdigits.tes")
     train_path = os.path.join(data_dir, "optdigits.tra")
+
+    # Check if data exists at path
+    if not os.path.isfile(test_path) or not os.path.isfile(train_path):
+        print(
+            f"Data not located at path {train_path}. Donwloading from UCI repository."
+        )
+        download_and_save_MNIST(data_dir)
+
     # Load directly
     try:
         train_array = pd.read_csv(train_path, header=None).to_numpy()
         test_array = pd.read_csv(test_path, header=None).to_numpy()
+
     except:
         raise Exception(
             f"Unable to load data. Verify the existence of data in folder: {data_dir}"
         )
 
-    # Labels are in last row of dataframe/array
+    if train_val_test_split[0] is not None:
+        raise Exception(
+            "tinyMHIST: Train split argument passed, but train size is fixed."
+        )
+
+    # Labels are in last column of dataframe/array
     trainX = train_array[:, :-1]
     trainY = train_array[:, -1]
     # Take validation as subset of training data
@@ -62,7 +161,7 @@ def get_MNIST_train_val_test_data(
         test_size=train_val_test_split[2]
         / (train_val_test_split[1] + train_val_test_split[2]),
         shuffle=True,
-        random_state=rand_seed,
+        random_state=seed,
         stratify=test_and_val_Y,
     )
 
