@@ -6,7 +6,6 @@ import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import TensorDataset
 import shutil
-from typing import Union
 from egop_optimizer.dataloaders.utils import stratified_split
 import logging
 
