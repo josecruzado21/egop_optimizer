@@ -3,10 +3,9 @@ from typing import Union
 import torch
 from collections import defaultdict
 
+
 def stratified_split(
-    dataset: Union[list, torch.Tensor],
-    group1_perc: float = 0.5, 
-    seed: int = 42
+    dataset: Union[list, torch.Tensor], group1_perc: float = 0.5, seed: int = 42
 ) -> tuple[list, list]:
     """
     Splits a dataset into two groups (e.g., dev and test) in a stratified manner, preserving class proportions.

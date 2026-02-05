@@ -1,13 +1,22 @@
 import pytest
-from egop_optimizer.dataloaders.CIFAR10_dataloader import stratified_split, CIFAR10_cache_dataset, CIFAR10_cached_dataloader, CIFAR10_uncached_dataloader, CIFAR10_dataloader
+from egop_optimizer.dataloaders.CIFAR10_dataloader import (
+    stratified_split,
+    CIFAR10_cache_dataset,
+    CIFAR10_cached_dataloader,
+    CIFAR10_uncached_dataloader,
+    CIFAR10_dataloader,
+)
 import tempfile
 import torch
 from pathlib import Path
 
+
 def test_stratified_split_basic():
-    dataset = [(None, label) for label in [0]*10 + [1]*10 + [2]*10]
+    dataset = [(None, label) for label in [0] * 10 + [1] * 10 + [2] * 10]
     group1_perc = 0.6
-    group1_idx, group2_idx = stratified_split(dataset, group1_perc=group1_perc, seed=123)
+    group1_idx, group2_idx = stratified_split(
+        dataset, group1_perc=group1_perc, seed=123
+    )
     group1_labels = [dataset[i][1] for i in group1_idx]
     group2_labels = [dataset[i][1] for i in group2_idx]
     # Check class counts
@@ -18,6 +27,7 @@ def test_stratified_split_basic():
     assert group2_labels.count(1) == 4
     assert group2_labels.count(2) == 4
 
+
 def test_cifar10_cache_dataset_creates_files():
     # Use a temporary directory for both raw data and cached data
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -25,10 +35,7 @@ def test_cifar10_cache_dataset_creates_files():
         raw_data_dir = Path(tmpdir) / "raw"
         raw_data_dir.mkdir(parents=True, exist_ok=True)
         CIFAR10_cache_dataset(
-            data_dir=raw_data_dir,
-            save_dir=save_dir,
-            verbose=False,
-            delete_raw=False
+            data_dir=raw_data_dir, save_dir=save_dir, verbose=False, delete_raw=False
         )
         # Check that train.pt and test.pt exist
         train_file = save_dir / "train" / "train.pt"
@@ -43,6 +50,7 @@ def test_cifar10_cache_dataset_creates_files():
         assert test_images.shape[1:] == (3, 32, 32)
         assert test_labels.ndim == 1
 
+
 def test_CIFAR10_cached_dataloader_basic():
     # Create temporary directories for raw and cached data
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -56,7 +64,7 @@ def test_CIFAR10_cached_dataloader_basic():
             data_dir=raw_data_dir,
             save_dir=cached_data_dir,
             verbose=False,
-            delete_raw=False
+            delete_raw=False,
         )
 
         # Load cached dataloader
@@ -76,6 +84,7 @@ def test_CIFAR10_cached_dataloader_basic():
         assert train.tensors[0].shape[1:] == (3, 32, 32)
         assert dev.tensors[0].shape[1:] == (3, 32, 32)
         assert test.tensors[0].shape[1:] == (3, 32, 32)
+
 
 def test_CIFAR10_uncached_dataloader_basic():
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -98,6 +107,7 @@ def test_CIFAR10_uncached_dataloader_basic():
         assert len(train) > 0
         assert len(dev) > 0
         assert len(test) > 0
+
 
 def test_CIFAR10_dataloader_basic():
     with tempfile.TemporaryDirectory() as tmpdir:
