@@ -9,7 +9,13 @@ DATALOADER_METHOD_LIST = [tinyMNIST_dataloader]
 
 def setUpModule():
     """
-    Prints file name when test script is executed.
+    Prints the test file name when the test module is executed.
+
+    Args:
+        None
+
+    Returns:
+        None: Writes the file path to stdout.
     """
     print(f"\nRunning tests in {__file__}")
 
@@ -17,7 +23,13 @@ def setUpModule():
 class TestBasicSetup(unittest.TestCase):
     def test_initialization(self, batch_size=128):
         """
-        Instantiates dataloaders
+        Instantiates each dataloader to verify successful construction.
+
+        Args:
+            batch_size (int): Batch size passed to each dataloader (default: 128).
+
+        Returns:
+            None: Raises an exception if any dataloader fails to initialize.
         """
         for dataloader_method in DATALOADER_METHOD_LIST:
             _, _, _ = dataloader_method(batch_size=batch_size)
@@ -25,7 +37,13 @@ class TestBasicSetup(unittest.TestCase):
 
     def test_batches(self, batch_size=128):
         """
-        Instantiates dataloaders, converts to iterator, draws samples, sanity checks shape and datatype
+        Instantiates each dataloader, retrieves one batch, and checks basic shape consistency.
+
+        Args:
+            batch_size (int): Batch size used when sampling from each dataloader (default: 128).
+
+        Returns:
+            None: Asserts that feature and label batch dimensions match the requested batch size.
         """
         for dataloader_method in DATALOADER_METHOD_LIST:
             trainloader, _, _ = dataloader_method(batch_size=batch_size)

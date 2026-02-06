@@ -20,6 +20,16 @@ DEVICE = get_available_device()
 
 
 def download_and_save_MNIST(data_dir):
+    """
+    Downloads the UCI Optical Recognition of Handwritten Digits dataset, recreates the
+    original train/test split, and saves the data to disk in the expected raw file format.
+
+    Args:
+        data_dir (str): Directory where the processed .tra and .tes files will be saved.
+
+    Returns:
+        None: Writes optdigits.tra and optdigits.tes to disk.
+    """
 
     # fetch dataset from UCI repo
     optical_recognition_of_handwritten_digits = fetch_ucirepo(id=80)
@@ -43,7 +53,7 @@ def download_and_save_MNIST(data_dir):
     combined_test_data = pd.concat([X_test_and_val, y_test_and_val], axis=1)
 
     # Save with expected names
-    data_dir = get_data_dir()
+    data_dir = get_default_data_dir()
     test_path = os.path.join(data_dir, "optdigits.tes")
     train_path = os.path.join(data_dir, "optdigits.tra")
 
@@ -66,7 +76,7 @@ def check_donwload_has_same_train_test_split():
     y = optical_recognition_of_handwritten_digits.data.targets
 
     # Compare with downloaded csvs during development
-    data_dir = get_data_dir()
+    data_dir = get_default_data_dir()
     test_path = os.path.join(data_dir, "optdigits.tes")
     train_path = os.path.join(data_dir, "optdigits.tra")
     train_array = pd.read_csv(train_path, header=None).to_numpy()
@@ -96,7 +106,16 @@ def check_donwload_has_same_train_test_split():
     return
 
 
-def get_data_dir():
+def get_default_data_dir():
+    """
+    Returns the filesystem path to the raw optical recognition dataset directory.
+
+    Args:
+        None
+
+    Returns:
+        Path: Path to raw_data/optical_recognition_of_handwritten_digits relative to the project root.
+    """
     # Locate raw_data folder, assumed to be in same folder as egop_optimizer
     base = Path(__file__).resolve()
     data_dir = (
@@ -105,7 +124,6 @@ def get_data_dir():
     return data_dir
 
 
-# TODO: modify to automatically download from UCI site
 def get_MNIST_train_val_test_data(
     train_val_test_split=[None, 0.33, 0.66],
     device=DEVICE,
@@ -113,6 +131,21 @@ def get_MNIST_train_val_test_data(
     data_dir=None,
     seed=342,  # for controling random val/test splits
 ):
+    """
+    Loads the Optical Recognition of Handwritten Digits dataset, recreates the fixed UCI
+    training split, and divides the remaining data into validation and test sets.
+
+    Args:
+        train_val_test_split (list): Fractions for [train, val, test]. Train must be None since
+            the training set size is fixed (default: [None, 0.33, 0.66]).
+        device (torch.device): Device to place returned tensors on.
+        verbose (bool): If True, prints relative split sizes (default: False).
+        data_dir (str): Directory containing raw .tra and .tes files. If None, uses default location.
+        seed (int): Random seed for validation/test split reproducibility (default: 342).
+
+    Returns:
+        tuple: (trainX, trainY, valX, valY, testX, testY) as torch.Tensor objects on the specified device.
+    """
 
     if train_val_test_split[0] is not None:
         raise Exception(
@@ -120,7 +153,7 @@ def get_MNIST_train_val_test_data(
         )
 
     if data_dir is None:
-        data_dir = get_data_dir()
+        data_dir = get_default_data_dir()
     os.makedirs(data_dir, exist_ok=True)
     test_path = os.path.join(data_dir, "optdigits.tes")
     train_path = os.path.join(data_dir, "optdigits.tra")
@@ -188,6 +221,18 @@ def get_MNIST_train_val_test_data(
 
 
 def tinyMNIST_dataloader(batch_size, train_val_test_split=[None, 0.33, 0.66]):
+    """
+    Creates PyTorch DataLoaders for the Optical Recognition digits dataset using the
+    predefined training split and configurable validation/test splits.
+
+    Args:
+        batch_size (int): Number of samples per batch. If None, uses full-batch training.
+        train_val_test_split (list): Fractions for [train, val, test]. Train must be None
+            since the training set size is fixed (default: [None, 0.33, 0.66]).
+
+    Returns:
+        tuple: (trainloader, valloader, testloader) as torch.utils.data.DataLoader objects.
+    """
     trainX, trainY, valX, valY, testX, testY = get_MNIST_train_val_test_data(
         train_val_test_split=train_val_test_split,
     )
@@ -205,7 +250,3 @@ def tinyMNIST_dataloader(batch_size, train_val_test_split=[None, 0.33, 0.66]):
         TensorDataset(testX, testY), batch_size=batch_size, shuffle=False
     )
     return trainloader, valloader, testloader
-
-
-if __name__ == "__main__":
-    tinyMNIST_dataloader(batch_size=128)

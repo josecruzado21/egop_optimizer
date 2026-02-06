@@ -7,8 +7,13 @@ Script set up to allow eventual scaling of code with use of DataParallel or Dist
 
 def get_available_device() -> torch.device:
     """
-    Returns the appropriate device for training.
-    Uses 'cuda:0' if available, 'mps' if available on macOS, otherwise falls back to 'cpu'.
+    Returns the appropriate device for training, preferring GPU acceleration when available.
+
+    Args:
+        None
+
+    Returns:
+        torch.device: 'cuda:0' if CUDA is available, 'mps' if Apple Silicon MPS is available, otherwise 'cpu'.
     """
     if torch.cuda.is_available():
         return torch.device("cuda:0")
