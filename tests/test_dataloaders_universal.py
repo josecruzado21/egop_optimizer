@@ -1,10 +1,13 @@
 import unittest
 
 from egop_optimizer.dataloaders.tinyMNIST_dataloader import tinyMNIST_dataloader
+from egop_optimizer.dataloaders.linear_networks_dataloader import (
+    linear_networks_dataloader,
+)
 
 import pdb
 
-DATALOADER_METHOD_LIST = [tinyMNIST_dataloader]
+DATALOADER_METHOD_LIST = [tinyMNIST_dataloader, linear_networks_dataloader]
 
 
 def setUpModule():

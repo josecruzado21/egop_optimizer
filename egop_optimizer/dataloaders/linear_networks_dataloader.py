@@ -8,13 +8,22 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 
-# Build a random ill-conditioned matrix A of shape nxd
 def build_A(n, d, alpha):
+    """
+    Generates a random ill-conditioned matrix of shape (nxd) with power-law decaying singular values.
+
+    Args:
+        n (int): Number of rows of the matrix.
+        d (int): Number of columns of the matrix.
+        alpha (float): Exponent controlling singular value decay, where larger values
+            produce stronger ill-conditioning.
+
+    Returns:
+        np.ndarray: Matrix A of shape (n, d) with orthonormal singular vectors and
+            singular values proportional to k^{-alpha}.
+    """
     U, _ = np.linalg.qr(np.random.normal(size=(n, d)))
     Vh, _ = np.linalg.qr(np.random.normal(size=(d, d)))
-
-    # Old code for shelf-structure singular values:
-    # sing_vals = jnp.array([jnp.power(float(ii),-alpha) for ii in range(int(d/2))]+[jnp.power(float(ii),-3*alpha) for ii in range(int(d/2),d)])
     rank = min(d, n)
     sing_vals = np.power(np.arange(1.0, rank + 1.0), -alpha)
 
@@ -22,7 +31,7 @@ def build_A(n, d, alpha):
     return A
 
 
-def linear_networks_generate_dataloader(
+def linear_networks_dataloader(
     batch_size,
     input_size: int = 10,
     output_size: int = 10,
@@ -35,14 +44,29 @@ def linear_networks_generate_dataloader(
     persistent_workers: bool = True,
 ):
     """
+    Generates synthetic linear regression data with ill-conditioned features and returns train/val/test dataloaders.
     Generates X a measurement matrix of size output_size x input_size with spectral decay governed by alpha.
     Then generates Gaussian i.i.d. data M_star and labels Y=X@M_star.
-    Sample_list has int entries [num_train_samples, num_val_samples, num_test_samples].
 
-    Loads data to-device upon creation. This might be incompatible with the way fashionMNIST's dataloaders are
+    NOTE: Loads data to-device upon creation. This might be incompatible with the way fashionMNIST's dataloaders are
     set up, which I think assumes data gets moved to device during training.
-    """
 
+    Args:
+        batch_size (int): Number of samples per batch.
+        input_size (int): Feature dimension d (default: 10).
+        output_size (int): Output dimension (default: 10).
+        alpha (float): Exponent controlling feature matrix singular value decay (default: 2.0).
+        sample_list (list): Number of samples as [num_train, num_val, num_test] (default: [10000, 2000, 2000]).
+        noise_scale (float or str): Noise standard deviation. If "auto", sets noise based on label magnitude.
+            If None, no noise is added (default: None).
+        device (torch.device): Device to place generated tensors on.
+        num_workers (int): Number of dataloader worker processes (default: 2).
+        prefetch_factor (int): Number of batches prefetched by each worker (default: 2).
+        persistent_workers (bool): If True, keeps worker processes alive between epochs (default: True).
+
+    Returns:
+        tuple: (trainloader, valloader, testloader) as torch.utils.data.DataLoader objects.
+    """
     num_train_samples = sample_list[0]
     num_val_samples = sample_list[1]
     num_test_samples = sample_list[2]
@@ -114,18 +138,4 @@ def linear_networks_generate_dataloader(
     valloader = make_loader(valX, valY)
     testloader = make_loader(testX, testY)
 
-    ## No need to pin memory b.c. tensors moved to device ahead of time.
-    # trainloader = torch.utils.data.DataLoader(
-    #     torch.utils.data.TensorDataset(trainX, trainY),
-    #     batch_size=batch_size,
-    #     shuffle=True,
-    # )
-    # valloader = torch.utils.data.DataLoader(
-    #     torch.utils.data.TensorDataset(valX, valY), batch_size=batch_size, shuffle=True
-    # )
-    # testloader = torch.utils.data.DataLoader(
-    #     torch.utils.data.TensorDataset(testX, testY),
-    #     batch_size=batch_size,
-    #     shuffle=True,
-    # )
     return trainloader, valloader, testloader
