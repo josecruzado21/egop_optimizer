@@ -5,13 +5,27 @@ from torch.nn.init import _calculate_fan_in_and_fan_out
 from typing import Optional, Union, Tuple
 import math
 
+"""
+TODO:
+X Unify logic for initializing random parameters
+X Reinitialize and reinitialize_seeded(accepts explicit random seed)
+
+Not in first round:
+- Accept “current weights” for periodic reparam logic
+"""
+
 
 class BaseClassifier(nn.Module):
     """
     A base class for classifiers that require standard parameter initialization.
+
+    Args:
+        seed (int, optional): Defines the pytorch random seed for parameter initialization
+
+    Returns:
     """
 
-    def __init__(self, weight_dist="default", seed=42, **kwargs):
+    def __init__(self, seed=0, weight_dist="default", **kwargs):
         super().__init__()
         # weight_dist options: "default", "xavier_normal", "gaussian"
         self.weight_dist = weight_dist
@@ -19,7 +33,15 @@ class BaseClassifier(nn.Module):
         if seed is not None:
             self._gen.manual_seed(seed)
 
-    def init_params(
+    def reinitalize_seeded(self, seed, **kwargs):
+        # reset random number generator
+        self._gen.manual_seed(seed)
+
+        # then initialize params
+        self.reinitialize(**kwargs)
+        return
+
+    def reinitialize(
         self,
         verbose: bool = False,
         sampling_scale: Optional[float] = None,
