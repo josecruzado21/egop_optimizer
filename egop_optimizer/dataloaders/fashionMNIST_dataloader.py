@@ -6,13 +6,16 @@ import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import TensorDataset
 import shutil
-from utils import stratified_split
+from egop_optimizer.dataloaders.utils import stratified_split
 import logging
 import numpy as np
 
+# Default data directory: raw_data/ at the repo root (same level as egop_optimizer package)
+_DEFAULT_RAW_DATA_DIR = Path(__file__).resolve().parents[2] / "raw_data"
+
 
 def fashionMNIST_cache_dataset(
-    data_dir: str,
+    data_dir: str = None,
     save_dir: str = None,
     verbose: bool = True,
     delete_raw: bool = False,
@@ -30,6 +33,8 @@ def fashionMNIST_cache_dataset(
         None
     """
     logger = logging.getLogger("egop_optimizer.fashionMNIST_cache_dataset")
+    if data_dir is None:
+        data_dir = _DEFAULT_RAW_DATA_DIR
     data_dir = Path(data_dir)
     if save_dir is None:
         save_dir = Path.cwd()
@@ -176,7 +181,7 @@ def fashionMNIST_uncached_dataloader(
         tuple: (train_set, dev_set, test_set) as Dataset or Subset objects.
     """
     if data_dir is None:
-        raise ValueError("data_dir must be specified for uncached dataloader.")
+        data_dir = _DEFAULT_RAW_DATA_DIR
     data_dir = Path(data_dir)
 
     # 1. Define transformations (single channel for FashionMNIST)
@@ -201,13 +206,13 @@ def fashionMNIST_uncached_dataloader(
 
     # 2. Load datasets
     train_fmnist = torchvision.datasets.FashionMNIST(
-        root=data_dir / "raw_data" / "FashionMNIST",
+        root=data_dir,
         train=True,
         transform=transform_train,
         download=True,
     )
     test_fmnist = torchvision.datasets.FashionMNIST(
-        root=data_dir / "raw_data" / "FashionMNIST",
+        root=data_dir,
         train=False,
         transform=transform_test,
         download=True,
@@ -291,7 +296,7 @@ def fashionMNIST_dataloader(
     """
     logger = logging.getLogger("egop_optimizer.fashionMNIST_dataloader")
     if data_dir is None:
-        raise ValueError("data_dir must be specified for fashionMNIST_dataloader.")
+        data_dir = _DEFAULT_RAW_DATA_DIR
     data_dir = Path(data_dir)
 
     if use_cached:
