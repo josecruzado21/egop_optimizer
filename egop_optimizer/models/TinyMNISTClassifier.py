@@ -8,7 +8,30 @@ import pdb
 
 
 class TinyMNISTClassifier(BaseClassifier):
+    """
+    Implements a fully connected feedforward classifier for tinyMNIST-style inputs.
+
+    Args:
+        input_size (int): Flattened input dimension (default: 64).
+        hidden_sizes (list): List of hidden layer widths (default: [32, 16]).
+        num_classes (int): Number of output classes (default: 10).
+
+    Returns:
+        None: Initializes the network layers dynamically based on hidden_sizes.
+    """
+
     def __init__(self, input_size=64, hidden_sizes=[32, 16], num_classes=10):
+        """
+        Initializes the tinyMNIST classifier architecture.
+
+        Args:
+            input_size (int): Flattened input dimension (default: 64).
+            hidden_sizes (list): List of hidden layer widths (default: [32, 16]).
+            num_classes (int): Number of output classes (default: 10).
+
+        Returns:
+            None: Constructs fully connected layers and output layer.
+        """
         super().__init__()
         self.flatten = nn.Flatten()
 
@@ -24,6 +47,15 @@ class TinyMNISTClassifier(BaseClassifier):
         )
 
     def forward(self, x):
+        """
+        Performs a forward pass through the classifier.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, *) compatible with input_size.
+
+        Returns:
+            torch.Tensor: Logits of shape (batch_size, num_classes).
+        """
         x = self.flatten(x)
         for i in range(1, len(self._modules)):
             x = getattr(self, f"fc{i}")(x)

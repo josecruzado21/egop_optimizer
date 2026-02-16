@@ -21,9 +21,27 @@ def setUpModule():
 
 class TestBasicSetup(unittest.TestCase):
     def test_initialization(self):
+        """
+        Instantiates the TinyMNISTClassifier to verify successful initialization.
+
+        Args:
+            None
+
+        Returns:
+            None: Raises an exception if model construction fails.
+        """
         model = TinyMNISTClassifier()
 
     def test_model_eval(self, batch_size=128):
+        """
+        Instantiates the model, retrieves one batch from the dataloader, and performs a forward pass.
+
+        Args:
+            batch_size (int): Batch size used to sample from the dataloader (default: 128).
+
+        Returns:
+            None: Raises an exception if the forward pass fails.
+        """
         model = TinyMNISTClassifier()
         trainloader, _, _ = tinyMNIST_dataloader(batch_size=batch_size)
 
