@@ -11,7 +11,7 @@ X Unify logic for initializing random parameters
 X Reinitialize and reinitialize_seeded(accepts explicit random seed)
 
 Not in first round:
-- Accept “current weights” for periodic reparam logic
+- Accept "current weights" for periodic reparam logic
 """
 
 
@@ -27,15 +27,16 @@ class BaseClassifier(nn.Module):
 
     def __init__(self, seed=0, weight_dist="default", **kwargs):
         super().__init__()
-        # weight_dist options: "default", "xavier_normal", "gaussian"
+        # weight_dist options: "default", "xavier_normal", "gaussian", "kaiming_normal"
         self.weight_dist = weight_dist
         self._gen = torch.Generator()
         if seed is not None:
             self._gen.manual_seed(seed)
 
-    def reinitalize_seeded(self, seed, **kwargs):
+    def reinitialize_seeded(self, seed, **kwargs):
         # reset random number generator
         self._gen.manual_seed(seed)
+        # torch.manual_seed(seed)
 
         # then initialize params
         self.reinitialize(**kwargs)
@@ -71,35 +72,46 @@ class BaseClassifier(nn.Module):
             if mean is None:
                 mean = 0.0
 
-        for layer in self.children():
-            if isinstance(layer, (nn.Conv2d, nn.Linear)):
-                if verbose:
-                    print(f"Initializing layer with {self.weight_dist} distribution")
+        for module in self.modules():
+            if module is self:
+                continue
 
-                if self.weight_dist == "gaussian":
-                    # print("Using Gaussian IID initialization.")
-                    # Gaussian IID initialization
-                    with torch.no_grad():
-                        layer.weight.normal_(mean=mean, std=sampling_scale)
-                elif self.weight_dist == "xavier_normal" and isinstance(
-                    layer, torch.nn.modules.linear.Linear
-                ):
-                    # print("Using Xavier normal initialization.")
-                    centered_xavier_normal_(
-                        layer.weight, mean=torch.zeros_like(layer.weight)
-                    )
-                else:
-                    layer.reset_parameters()
-                    # Adela note: I don't know what the below code is doing? Resetting again and getting the random state?
-                    with torch.random.fork_rng(enabled=True):
-                        torch.set_rng_state(self._gen.get_state())
-                        layer.reset_parameters()
-                        self._gen.set_state(torch.get_rng_state())
+            if hasattr(module, 'reset_parameters'):
+                if isinstance(module, (nn.Conv2d, nn.Linear)):
+                    if verbose:
+                        print(f"Initializing layer with {self.weight_dist} distribution")
+
+                    if self.weight_dist == "gaussian":
+                        # Gaussian IID initialization
+                        with torch.no_grad():
+                            module.weight.normal_(mean=mean, std=sampling_scale, generator=self._gen)
+                    elif self.weight_dist == "xavier_normal" and isinstance(
+                        module, torch.nn.modules.linear.Linear
+                    ):
+                        centered_xavier_normal_(
+                            module.weight, mean=torch.zeros_like(module.weight), generator=self._gen
+                        )
+                    elif self.weight_dist == "kaiming_normal":
+                        if hasattr(module, 'weight') and module.weight is not None:
+                            nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+                        if hasattr(module, 'bias') and module.bias is not None:
+                            nn.init.constant_(module.bias, 0)
+                    else:
+                        module.reset_parameters()
+                        # Adela note: I don't know what the below code is doing? Resetting again and getting the random state?
+                        with torch.random.fork_rng(enabled=True):
+                            torch.set_rng_state(self._gen.get_state())
+                            module.reset_parameters()
+                            self._gen.set_state(torch.get_rng_state())
+
+                elif isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                    if hasattr(module, 'weight') and module.weight is not None:
+                        nn.init.constant_(module.weight, 1)
+                    if hasattr(module, 'bias') and module.bias is not None:
+                        nn.init.constant_(module.bias, 0)
 
 
-"""
-IN-HOUSE DISTRIBUTION FUNCTIONS & HELPERS
-"""
+
 
 
 def centered_xavier_normal_(
