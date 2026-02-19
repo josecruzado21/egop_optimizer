@@ -22,7 +22,7 @@ class LinearFeedforward(BaseClassifier):
         None: Initializes the network layers and parameter bookkeeping.
     """
 
-    def __init__(self, input_size, hidden_sizes, output_size, bias=False):
+    def __init__(self, input_size, hidden_sizes, output_size, bias=False, seed=None):
         """
         Initializes the linear feedforward architecture and parameter count.
 
@@ -38,7 +38,7 @@ class LinearFeedforward(BaseClassifier):
 
         # Experiments with linear networks used xavier initialization rather than pytorch's default
         # reset_parameters() for linear layers (uniform(-1/sqrt(in_features), 1/sqrt(in_features))).
-        super().__init__(weight_dist="xavier_normal")
+        super().__init__(weight_dist="xavier_normal", seed=seed)
         self.fc1 = nn.Linear(input_size, hidden_sizes[0], bias=bias)
         self.fc2 = nn.Linear(hidden_sizes[0], hidden_sizes[1], bias=bias)
         self.fc3 = nn.Linear(hidden_sizes[1], output_size, bias=bias)
