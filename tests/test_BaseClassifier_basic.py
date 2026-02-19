@@ -31,7 +31,10 @@ class TestBasicSetup(unittest.TestCase):
         w1 = dict(model.named_parameters())["fc1.weight"].detach().clone()
         model.reinitialize_seeded(seed=42)
         w2 = dict(model.named_parameters())["fc1.weight"].detach().clone()
-        self.assertTrue(torch.allclose(w1, w2, atol=1e-7), "Reinitializing with same seed did not produce identical weights")
+        self.assertTrue(
+            torch.allclose(w1, w2, atol=1e-7),
+            "Reinitializing with same seed did not produce identical weights",
+        )
 
     def test_same_seed_gives_same_weights(self):
         # Initialize with no seed
@@ -42,7 +45,9 @@ class TestBasicSetup(unittest.TestCase):
         model2.reinitialize_seeded(seed=2)
         w2 = dict(model2.named_parameters())["fc1.weight"].detach().clone()
 
-        self.assertTrue(torch.allclose(w1, w2, atol=1e-7), "Weights are not identical for same seed")
+        self.assertTrue(
+            torch.allclose(w1, w2, atol=1e-7), "Weights are not identical for same seed"
+        )
 
     def test_reinitialize_seed_different_each_time(self):
         # Initialize with seed
@@ -51,7 +56,10 @@ class TestBasicSetup(unittest.TestCase):
         w1 = dict(model.named_parameters())["fc1.weight"].detach().clone()
         model.reinitialize()
         w2 = dict(model.named_parameters())["fc1.weight"].detach().clone()
-        self.assertFalse(torch.allclose(w1, w2, atol=1e-7), "Reinitializing without seed should produce different weights")
+        self.assertFalse(
+            torch.allclose(w1, w2, atol=1e-7),
+            "Reinitializing without seed should produce different weights",
+        )
 
     def test_reinitialize_noseed_different_each_time(self):
         # Initialize with no seed
@@ -60,7 +68,10 @@ class TestBasicSetup(unittest.TestCase):
         w1 = dict(model.named_parameters())["fc1.weight"].detach().clone()
         model.reinitialize()
         w2 = dict(model.named_parameters())["fc1.weight"].detach().clone()
-        self.assertFalse(torch.allclose(w1, w2, atol=1e-7), "Reinitializing without seed should produce different weights")
+        self.assertFalse(
+            torch.allclose(w1, w2, atol=1e-7),
+            "Reinitializing without seed should produce different weights",
+        )
 
     def test_reinitialize_seeded_different_seeds(self):
         # Initialize with no seed
@@ -69,7 +80,10 @@ class TestBasicSetup(unittest.TestCase):
         w1 = dict(model.named_parameters())["fc1.weight"].detach().clone()
         model.reinitialize_seeded(seed=2)
         w2 = dict(model.named_parameters())["fc1.weight"].detach().clone()
-        self.assertFalse(torch.allclose(w1, w2, atol=1e-7), "Different seeds should produce different weights")
+        self.assertFalse(
+            torch.allclose(w1, w2, atol=1e-7),
+            "Different seeds should produce different weights",
+        )
 
     def test_reinitialize_sequence_matches_for_same_seed(self):
         # Initialize with seed
@@ -85,8 +99,14 @@ class TestBasicSetup(unittest.TestCase):
         w1_2 = dict(model1.named_parameters())["fc1.weight"].detach().clone()
         model2.reinitialize()
         w2_2 = dict(model2.named_parameters())["fc1.weight"].detach().clone()
-        self.assertTrue(torch.allclose(w1_1, w2_1, atol=1e-7), "First reinitialization weights do not match")
-        self.assertTrue(torch.allclose(w1_2, w2_2, atol=1e-7), "Second reinitialization weights do not match")
+        self.assertTrue(
+            torch.allclose(w1_1, w2_1, atol=1e-7),
+            "First reinitialization weights do not match",
+        )
+        self.assertTrue(
+            torch.allclose(w1_2, w2_2, atol=1e-7),
+            "Second reinitialization weights do not match",
+        )
 
     def test_init_with_seed_vs_no_seed_reinitialize_seeded(self):
         model1 = BasicLinear(seed=123)
@@ -97,7 +117,10 @@ class TestBasicSetup(unittest.TestCase):
         model2.reinitialize_seeded(seed=42)
         w2 = dict(model2.named_parameters())["fc1.weight"].detach().clone()
 
-        self.assertTrue(torch.allclose(w1, w2, atol=1e-7), "Models should match after reinitialize_seeded with same seed")
+        self.assertTrue(
+            torch.allclose(w1, w2, atol=1e-7),
+            "Models should match after reinitialize_seeded with same seed",
+        )
 
 
 if __name__ == "__main__":

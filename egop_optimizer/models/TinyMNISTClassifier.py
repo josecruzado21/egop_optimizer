@@ -20,7 +20,7 @@ class TinyMNISTClassifier(BaseClassifier):
         None: Initializes the network layers dynamically based on hidden_sizes.
     """
 
-    def __init__(self, input_size=64, hidden_sizes=[32, 16], num_classes=10):
+    def __init__(self, input_size=64, hidden_sizes=[32, 16], num_classes=10, seed=None):
         """
         Initializes the tinyMNIST classifier architecture.
 
@@ -32,7 +32,7 @@ class TinyMNISTClassifier(BaseClassifier):
         Returns:
             None: Constructs fully connected layers and output layer.
         """
-        super().__init__()
+        super().__init__(seed=seed)
         self.flatten = nn.Flatten()
 
         # Dynamically create fully connected layers
