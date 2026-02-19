@@ -33,7 +33,7 @@ class BaseClassifier(nn.Module):
         if seed is not None:
             self._gen.manual_seed(seed)
 
-    def reinitalize_seeded(self, seed, **kwargs):
+    def reinitialize_seeded(self, seed, **kwargs):
         # reset random number generator
         self._gen.manual_seed(seed)
 
@@ -80,13 +80,13 @@ class BaseClassifier(nn.Module):
                     # print("Using Gaussian IID initialization.")
                     # Gaussian IID initialization
                     with torch.no_grad():
-                        layer.weight.normal_(mean=mean, std=sampling_scale)
+                        layer.weight.normal_(mean=mean, std=sampling_scale, generator=self._gen)
                 elif self.weight_dist == "xavier_normal" and isinstance(
                     layer, torch.nn.modules.linear.Linear
                 ):
                     # print("Using Xavier normal initialization.")
                     centered_xavier_normal_(
-                        layer.weight, mean=torch.zeros_like(layer.weight)
+                        layer.weight, mean=torch.zeros_like(layer.weight), generator=self._gen
                     )
                 else:
                     layer.reset_parameters()
