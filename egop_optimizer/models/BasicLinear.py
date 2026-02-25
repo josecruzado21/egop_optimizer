@@ -8,8 +8,8 @@ from egop_optimizer.models.BaseClassifier import BaseClassifier
 
 
 class BasicLinear(BaseClassifier):
-    def __init__(self, input_size=10, output_size=10, bias=True):
-        super().__init__(weight_dist="xavier_normal")
+    def __init__(self, input_size=10, output_size=10, bias=True, seed=None):
+        super().__init__(weight_dist="xavier_normal", seed=seed)
         self.fc1 = nn.Linear(input_size, output_size, bias=bias)
 
     def forward(self, x):
