@@ -27,8 +27,9 @@ class FashionMNISTClassifier(BaseClassifier):
         hidden_size: int = 128,
         num_classes: int = 10,
         weight_dist: str = "default",  #new test on different distributions
+        seed=None,
     ):
-        super(FashionMNISTClassifier, self).__init__(weight_dist=weight_dist)
+        super(FashionMNISTClassifier, self).__init__(seed=seed, weight_dist=weight_dist)
         if pool_factor is None:
             self.optional_pool = nn.Identity()
             fc_input_size = 28**2
