@@ -92,10 +92,13 @@ class BaseClassifier(nn.Module):
                             module.weight, mean=torch.zeros_like(module.weight), generator=self._gen
                         )
                     elif self.weight_dist == "kaiming_normal":
-                        if hasattr(module, 'weight') and module.weight is not None:
-                            nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
-                        if hasattr(module, 'bias') and module.bias is not None:
-                            nn.init.constant_(module.bias, 0)
+                        with torch.random.fork_rng(enabled=True):
+                            torch.set_rng_state(self._gen.get_state())
+                            if hasattr(module, 'weight') and module.weight is not None:
+                                nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+                            if hasattr(module, 'bias') and module.bias is not None:
+                                nn.init.constant_(module.bias, 0)
+                            self._gen.set_state(torch.get_rng_state())
                     else:
                         module.reset_parameters()
                         # Adela note: I don't know what the below code is doing? Resetting again and getting the random state?
