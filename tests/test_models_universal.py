@@ -10,6 +10,7 @@ from egop_optimizer.models.ImagenetClassifier import (
     ImageNet_model_34_layer_residual,
     ImageNet_model_VGG19,
 )
+from egop_optimizer.models.FashionMNISTClassfier import FashionMNISTClassifier
 
 import pdb
 
@@ -20,6 +21,7 @@ MODEL_METHOD_LIST = [
     ImageNet_model_34_layer_plain,
     ImageNet_model_34_layer_residual,
     ImageNet_model_VGG19,
+    FashionMNISTClassifier,
 ]
 
 _DEFAULT_LINEAR_NETWORK_PARAMS = {
