@@ -36,7 +36,6 @@ class BaseClassifier(nn.Module):
     def reinitialize_seeded(self, seed, **kwargs):
         # reset random number generator
         self._gen.manual_seed(seed)
-        # torch.manual_seed(seed)
 
         # then initialize params
         self.reinitialize(**kwargs)
