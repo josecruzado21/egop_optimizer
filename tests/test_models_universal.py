@@ -5,10 +5,7 @@ import torch.nn as nn
 from egop_optimizer.models.TinyMNISTClassifier import TinyMNISTClassifier
 from egop_optimizer.models.LinearFeedforward import LinearFeedforward
 from egop_optimizer.models.ImagenetClassifier import (
-    ImageNet_model_alexnet,
-    ImageNet_model_34_layer_plain,
     ImageNet_model_34_layer_residual,
-    ImageNet_model_VGG19,
 )
 from egop_optimizer.models.FashionMNISTClassfier import FashionMNISTClassifier
 
@@ -17,10 +14,7 @@ import pdb
 MODEL_METHOD_LIST = [
     TinyMNISTClassifier,
     lambda seed=None: LinearFeedforward(seed=seed, **_DEFAULT_LINEAR_NETWORK_PARAMS),
-    ImageNet_model_alexnet,
-    ImageNet_model_34_layer_plain,
     ImageNet_model_34_layer_residual,
-    ImageNet_model_VGG19,
     FashionMNISTClassifier,
 ]
 
