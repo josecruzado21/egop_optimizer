@@ -35,97 +35,9 @@ class Conv2d_reparam(nn.Conv2d):
             w_new = torch.einsum('ij,bj->bi', self.V.T, w_flat)
             self.weight.copy_(w_new.view_as(self.weight))
 
-class Linear_reparam(nn.Linear):
-    def __init__(self, in_features, out_features, V, bias=False):
-        super().__init__(in_features, out_features, bias)
-        self.V = V
 
-    def forward(self, input):
-        V = self.V
-        W = self.weight
-        W_new = (V.to(W.device) @ W.flatten()).view(W.shape)
-        return F.linear(input, W_new, self.bias)
-    
-    def recover_original_weights(self):
-        with torch.no_grad():
-            V = self.V
-            W = self.weight
-            W_orig = (V.to(W.device) @ W.flatten()).view(W.shape)
-        return W_orig    
 
-class EGOP_auxiliary_variables_linear_layer(nn.Linear):
-    def __init__(
-        self,
-        V,
-        in_features,
-        out_features,
-        bias=True,
-    ):
-        """
-        Input matrix V should be a matrix of side length dim_1 * dim_2 x r, the r leading eigenvectors for this layer's EGOP.
-        """
-        if type(V) == np.ndarray:
-            V = torch.from_numpy(V).type(torch.FloatTensor)
-        elif type(V) == torch.Tensor:
-            V = V
-        else:
-            raise Exception(
-                "Linear layers: Unsupported format for reparameterization matrix."
-            )
-        self.V = V
-        self.d = in_features * out_features
-        self.r = V.shape[1]
-        super().__init__(in_features, out_features, bias)
-        self.weight_r = torch.nn.parameter.Parameter(torch.empty((self.r), device=self.weight.device))
-        self.weight_d = torch.nn.parameter.Parameter(torch.empty((self.d), device=self.weight.device))
-        self.reset_parameters()
-        try:
-            assert torch.all(torch.isclose(V.T @ V, torch.eye(self.r).to(V.device), atol=1e-5))
-        except:
-            raise Exception(
-                "Provided matrix V does not have orthonormal columns to specified tolerance."
-            )
 
-    def forward(self, input):
-        V = self.V
-        V = V.to(self.weight_r.device)
-        W_prime = torch.reshape(
-            self.weight_d + V @ (self.weight_r - V.T @ self.weight_d),
-            shape=(self.out_features, self.in_features),
-        )
-        return F.linear(input, W_prime, bias=self.bias)
-    
-    def recover_original_weights(self):
-        with torch.no_grad():
-            V = self.V
-            weight_r = self.weight_r
-            weight_d = self.weight_d
-            W = torch.reshape(weight_d + V.to(weight_d.device) @ (weight_r - V.to(weight_d.device).T @ weight_d),
-                              shape=(self.out_features, self.in_features))
-        return W    
-    
-    def reset_parameters(self):
-        # If auxiliary parameters are not yet created (called from parent __init__), only run base init.
-        if not (hasattr(self, "weight_r") and hasattr(self, "weight_d") and hasattr(self, "V")):
-            return super().reset_parameters()
-
-        # full initialization when aux params exist
-        super().reset_parameters()
-        with torch.no_grad():
-            w_flat = self.weight.view(-1)  # Flatten weight
-            V = self.V.to(self.weight_r.device)
-
-            # Ensure dimensions match for matrix multiplication
-            if V.shape[0] != w_flat.shape[0]:
-                raise ValueError(
-                    f"Dimension mismatch: V has shape {V.shape}, but w_flat has shape {w_flat.shape}."
-                )
-
-            theta_r = torch.matmul(V.T, w_flat)
-            VVT_w = torch.matmul(V, torch.matmul(V.T, w_flat))
-            theta_d = w_flat - VVT_w
-            self.weight_r.copy_(theta_r.view_as(self.weight_r))
-            self.weight_d.copy_(theta_d.view_as(self.weight_d))
 
 class ResBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, V1=None, V2=None):
