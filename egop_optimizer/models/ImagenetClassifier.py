@@ -5,7 +5,7 @@ from egop_optimizer.models.BaseClassifier import BaseClassifier
 
 
 class ImageNet_model_alexnet(BaseClassifier):
-    def __init__(self, num_classes=1000, seed=0, weight_dist="kaiming_normal"):
+    def __init__(self, num_classes=1000, seed=None, weight_dist="kaiming_normal"):
         super().__init__(seed=seed, weight_dist=weight_dist)
         self.features = nn.Sequential(
             nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2, bias=True),
@@ -51,7 +51,7 @@ class ImageNet_model_alexnet(BaseClassifier):
 
 
 class ImageNet_model_34_layer_plain(BaseClassifier):
-    def __init__(self, num_classes=1000, seed=0, weight_dist="kaiming_normal"):
+    def __init__(self, num_classes=1000, seed=None, weight_dist="kaiming_normal"):
         super().__init__(seed=seed, weight_dist=weight_dist)
         self.features = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
@@ -143,7 +143,7 @@ class ImageNet_model_34_layer_plain(BaseClassifier):
 
 
 class ImageNet_model_34_layer_residual(BaseClassifier):
-    def __init__(self, num_classes=1000, seed=0, weight_dist="kaiming_normal"):
+    def __init__(self, num_classes=1000, seed=None, weight_dist="kaiming_normal"):
         super().__init__(seed=seed, weight_dist=weight_dist)
         self.features1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
@@ -191,7 +191,7 @@ class ImageNet_model_34_layer_residual(BaseClassifier):
 
 
 class ImageNet_model_VGG19(BaseClassifier):
-    def __init__(self, num_classes=1000, seed=0, weight_dist="kaiming_normal"):
+    def __init__(self, num_classes=1000, seed=None, weight_dist="kaiming_normal"):
         super().__init__(seed=seed, weight_dist=weight_dist)
         self.features = nn.Sequential(
             # Block 1
