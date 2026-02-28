@@ -71,8 +71,8 @@ class BaseClassifier(nn.Module):
             if mean is None:
                 mean = 0.0
 
-        for layer in self.children():
-            if isinstance(layer, (nn.Conv2d, nn.Linear, nn.Sequential)):
+        for layer in self.modules():
+            if isinstance(layer, (nn.Conv2d, nn.Linear)):
                 if verbose:
                     print(f"Initializing layer with {self.weight_dist} distribution")
 
