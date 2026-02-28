@@ -71,46 +71,36 @@ class BaseClassifier(nn.Module):
             if mean is None:
                 mean = 0.0
 
-        for module in self.modules():
-            if module is self:
-                continue
+        for layer in self.children():
+            if isinstance(layer, (nn.Conv2d, nn.Linear, nn.Sequential)):
+                if verbose:
+                    print(f"Initializing layer with {self.weight_dist} distribution")
 
-            if hasattr(module, 'reset_parameters'):
-                if isinstance(module, (nn.Conv2d, nn.Linear)):
-                    if verbose:
-                        print(f"Initializing layer with {self.weight_dist} distribution")
-
-                    if self.weight_dist == "gaussian":
-                        # Gaussian IID initialization
-                        with torch.no_grad():
-                            module.weight.normal_(mean=mean, std=sampling_scale, generator=self._gen)
-                    elif self.weight_dist == "xavier_normal" and isinstance(
-                        module, torch.nn.modules.linear.Linear
-                    ):
-                        centered_xavier_normal_(
-                            module.weight, mean=torch.zeros_like(module.weight), generator=self._gen
-                        )
-                    elif self.weight_dist == "kaiming_normal":
-                        with torch.random.fork_rng(enabled=True):
-                            torch.set_rng_state(self._gen.get_state())
-                            if hasattr(module, 'weight') and module.weight is not None:
-                                nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
-                            if hasattr(module, 'bias') and module.bias is not None:
-                                nn.init.constant_(module.bias, 0)
-                            self._gen.set_state(torch.get_rng_state())
-                    else:
-                        module.reset_parameters()
-                        # Adela note: I don't know what the below code is doing? Resetting again and getting the random state?
-                        with torch.random.fork_rng(enabled=True):
-                            torch.set_rng_state(self._gen.get_state())
-                            module.reset_parameters()
-                            self._gen.set_state(torch.get_rng_state())
-
-                elif isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                    if hasattr(module, 'weight') and module.weight is not None:
-                        nn.init.constant_(module.weight, 1)
-                    if hasattr(module, 'bias') and module.bias is not None:
-                        nn.init.constant_(module.bias, 0)
+                if self.weight_dist == "gaussian":
+                    # Gaussian IID initialization
+                    with torch.no_grad():
+                        layer.weight.normal_(mean=mean, std=sampling_scale, generator=self._gen)
+                elif self.weight_dist == "xavier_normal" and isinstance(
+                    layer, torch.nn.modules.linear.Linear
+                ):
+                    centered_xavier_normal_(
+                        layer.weight, mean=torch.zeros_like(layer.weight), generator=self._gen
+                    )
+                elif self.weight_dist == "kaiming_normal":
+                    with torch.random.fork_rng(enabled=True):
+                        torch.set_rng_state(self._gen.get_state())
+                        if hasattr(layer, 'weight') and layer.weight is not None:
+                            nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
+                        if hasattr(layer, 'bias') and layer.bias is not None:
+                            nn.init.constant_(layer.bias, 0)
+                        self._gen.set_state(torch.get_rng_state())
+                else:
+                    layer.reset_parameters()
+                    # Adela note: I don't know what the below code is doing? Resetting again and getting the random state?
+                    with torch.random.fork_rng(enabled=True):
+                        torch.set_rng_state(self._gen.get_state())
+                        layer.reset_parameters()
+                        self._gen.set_state(torch.get_rng_state())
 
 
 

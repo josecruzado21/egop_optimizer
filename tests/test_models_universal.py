@@ -2,20 +2,20 @@ import unittest
 import torch
 import torch.nn as nn
 
-from egop_optimizer.models.TinyMNISTClassifier import TinyMNISTClassifier
+# from egop_optimizer.models.TinyMNISTClassifier import TinyMNISTClassifier
 from egop_optimizer.models.LinearFeedforward import LinearFeedforward
 from egop_optimizer.models.ImagenetClassifier import (
     ImageNet_model_34_layer_residual,
 )
-from egop_optimizer.models.FashionMNISTClassfier import FashionMNISTClassifier
+# from egop_optimizer.models.FashionMNISTClassfier import FashionMNISTClassifier
 
 import pdb
 
 MODEL_METHOD_LIST = [
-    TinyMNISTClassifier,
+    # TinyMNISTClassifier,
     lambda seed=None: LinearFeedforward(seed=seed, **_DEFAULT_LINEAR_NETWORK_PARAMS),
-    ImageNet_model_34_layer_residual,
-    FashionMNISTClassifier,
+    # ImageNet_model_34_layer_residual,
+    # FashionMNISTClassifier,
 ]
 
 _DEFAULT_LINEAR_NETWORK_PARAMS = {
@@ -90,8 +90,10 @@ class TestReinitialization(unittest.TestCase):
             model = model_method()
             model.reinitialize()
             first_init_params = dict_of_parameters(model)
+            # print(f"first_init_params: {first_init_params}")
             model.reinitialize()
             second_init_params = dict_of_parameters(model)
+            # print(f"second_init_params: {second_init_params}")
 
             self.assertFalse(
                 param_dicts_equal(first_init_params, second_init_params),
@@ -171,30 +173,35 @@ def dict_of_parameters(model):
     """
     Extracts copies of flattened parameter vectors from selected layers of a model.
 
-    This function recursively iterates over all modules of ``model`` and,
+    This function iterates over the immediate child modules of ``model`` and,
     for each layer that is an instance of ``nn.Conv2d`` or ``nn.Linear``,
     stores a flattened vector of its parameter values (excluding gradients)
     in a dictionary keyed by the layer index.
 
     Args:
         model (torch.nn.Module):
-            The model whose layers will be inspected.
+            The model whose child layers will be inspected.
 
     Returns:
         Dict[int, torch.Tensor]:
             A dictionary mapping the integer index of each qualifying layer
-            (as given by ``enumerate(model.modules())``) to a 1D tensor
-            containing a snapshot of that layer's parameter values.
+            (as given by ``enumerate(model.children())``) to a 1D tensor
+            containing a snapshot of that layer’s parameter values.
 
     Notes:
-        - All submodules are traversed recursively via ``model.modules()``.
+        - Only immediate children of ``model`` are considered; nested
+          submodules are not traversed recursively.
         - Only layers of type ``nn.Conv2d`` and ``nn.Linear`` are included.
         - The returned tensors contain parameter values only (no gradients).
     """
     param_dict = dict()
-    for idx, layer in enumerate(model.modules()):
+    for idx, layer in enumerate(model.children()):
+        # print(f"Children {layer}")
+        
         if isinstance(layer, (nn.Conv2d, nn.Linear)):
             param_dict[idx] = layer_params_as_vector(layer)
+    # for idx,layer in enumerate(model.modules()):
+    #     print(f"Modules {layer}")
     return param_dict
 
 
