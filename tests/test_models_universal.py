@@ -14,7 +14,7 @@ import pdb
 MODEL_METHOD_LIST = [
     # TinyMNISTClassifier,
     lambda seed=None: LinearFeedforward(seed=seed, **_DEFAULT_LINEAR_NETWORK_PARAMS),
-    # ImageNet_model_34_layer_residual,
+    ImageNet_model_34_layer_residual,
     # FashionMNISTClassifier,
 ]
 
