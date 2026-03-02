@@ -3,7 +3,7 @@ import torch
 from egop_optimizer.models.ImagenetClassifier import (
     ImageNet_model_34_layer_residual,
 )
-
+from egop_optimizer.utils.device_utils import get_available_device
 
 def setUpModule():
     print(f"\nRunning tests in {__file__}")
@@ -13,8 +13,6 @@ def setUpModule():
 BATCH_SIZE = 2
 NUM_CLASSES = 1000
 DUMMY_INPUT = torch.randn(BATCH_SIZE, 3, 224, 224)
-
-
 
 class TestResidual34(unittest.TestCase):
     def test_initialization(self):
