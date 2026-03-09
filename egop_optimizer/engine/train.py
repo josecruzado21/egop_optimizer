@@ -78,7 +78,11 @@ def basic_train_loop(
     for t in range(epochs):
         epoch_loss = 0
         training_logger.info(f"Starting epoch {t}")
+        counter = 0
         for batch_data, batch_labels in tqdm(trainloader, leave=False):
+            counter += 1
+            if counter >4: # for quick testing, remove this line for full training
+                break
             if device is not None and (
                 batch_data.device.type != device.type
                 or batch_labels.device.type != device.type
