@@ -3,7 +3,7 @@ import os
 import torch
 import logging
 from datetime import datetime
-
+import time
 from tqdm.auto import tqdm
 import pdb
 
@@ -82,6 +82,7 @@ def basic_train_loop(
         epoch_loss = 0
         training_logger.info(f"Starting epoch {t}")
         counter = 0
+        train_start = time.time()
         for batch_data, batch_labels in tqdm(trainloader, leave=False):
             counter += 1
             if counter >100:
@@ -97,11 +98,18 @@ def basic_train_loop(
             batch_loss.backward()
             optimizer.step()
             epoch_loss += batch_loss
+        train_end = time.time()
+        train_duration = train_end - train_start
+        epoch_loss /= len(trainloader.dataset)
 
         # Eval model
-        epoch_val_loss = compute_validation_loss(model, sum_loss_fn, valloader)
+        val_start = time.time()
+        epoch_val_loss = compute_validation_loss(model, sum_loss_fn, valloader, device)
+        val_end = time.time()
+        val_duration = val_end - val_start
         training_logger.info(
-            f"Epoch {t}: total loss = {epoch_loss:.2f}, val loss = {epoch_val_loss}"
+            f"Epoch {t}: total loss = {epoch_loss:.2f}, val loss = {epoch_val_loss}, "
+            f"train time = {train_duration:.2f}s, val time = {val_duration:.2f}s"
         )
         model.train()
 
