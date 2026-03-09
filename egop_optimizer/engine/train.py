@@ -13,6 +13,19 @@ DEVICE = get_available_device()
 
 
 def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_crop=False):
+    """
+    Evaluates the model on a validation dataset and computes the average loss and accuracy.
+
+    Args:
+        model (torch.nn.Module): The model to evaluate.
+        sum_loss_fn (callable): Loss function with reduction='sum' for aggregating batch losses.
+        valloader (DataLoader): DataLoader for the validation dataset.
+        device (torch.device, optional): Device to run evaluation on. Defaults to DEVICE.
+        ten_crop (bool, optional): If True, applies 10-crop evaluation for image data. Defaults to False.
+
+    Returns:
+        tuple: (average validation loss per sample, validation accuracy)
+    """
     total_val_loss = 0.0
     total_val, correct_val = 0, 0
     model.eval()
@@ -49,7 +62,28 @@ def basic_train_loop(
     report_validation_metrics = True,
 ):
     """
-    loss_method should accept an argument: reduction
+   Runs a basic training loop for a PyTorch model, with optional validation and logging.
+
+    Args:
+        model (torch.nn.Module): The model to train.
+        trainloader (DataLoader): DataLoader for the training dataset.
+        optimizer (torch.optim.Optimizer): Optimizer for model parameters.
+        epochs (int): Number of training epochs.
+        loss_method (callable): Loss function constructor, must accept a 'reduction' argument.
+        LR_scheduler (optional): Learning rate scheduler (currently not supported).
+        valloader (DataLoader, optional): DataLoader for the validation dataset.
+        device (torch.device, optional): Device to use for training. Defaults to DEVICE.
+        experiment_name (str, optional): Name for the experiment/log directory. Defaults to "default".
+        ten_crop (bool, optional): If True, uses 10-crop evaluation for validation. Defaults to False.
+        report_validation_metrics (bool, optional): If True, computes and logs validation metrics. Defaults to True.
+
+    Logs:
+        - Training and validation loss and accuracy per epoch.
+        - Training and validation time per epoch.
+        - Experiment setup information.
+
+    Returns:
+        None
     """
     log_dir = f"logs/{experiment_name}"
     os.makedirs(log_dir, exist_ok=True)
@@ -134,4 +168,3 @@ def basic_train_loop(
                 f"Epoch {t}: Training Loss = {epoch_loss:.2f}, Training Acc. = {train_acc:.4f}, "
                 f"Training Time = {train_duration:.2f}m"
             )
-    return
