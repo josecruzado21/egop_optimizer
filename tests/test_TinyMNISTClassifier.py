@@ -6,7 +6,8 @@ import pdb
 
 from egop_optimizer.models.TinyMNISTClassifier import TinyMNISTClassifier
 from egop_optimizer.dataloaders.tinyMNIST_dataloader import tinyMNIST_dataloader
-
+from egop_optimizer.utils.device_utils import get_available_device
+DEVICE = get_available_device()
 
 def setUpModule():
     """
@@ -45,6 +46,7 @@ class TestBasicSetup(unittest.TestCase):
             None: Raises an exception if the forward pass fails.
         """
         model = TinyMNISTClassifier()
+        model = model.to(DEVICE)
         trainloader, _, _ = tinyMNIST_dataloader(batch_size=batch_size)
 
         train_iterator = iter(trainloader)

@@ -3,7 +3,7 @@ import os
 import torch
 import logging
 from datetime import datetime
-
+import time
 from tqdm.auto import tqdm
 import pdb
 
@@ -12,13 +12,27 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 
-def compute_validation_loss(model, sum_loss_fn, valloader):
-    total_val_loss = 0
-    for batch_data, batch_labels in valloader:
-        output = model(batch_data)
-        total_val_loss += sum_loss_fn(output, batch_labels)
-    # Average over dataset size
-    return total_val_loss / len(valloader.dataset)
+def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_crop=False):
+    total_val_loss = 0.0
+    total_val, correct_val = 0, 0
+    model.eval()
+    with torch.no_grad():
+        for batch_data, batch_labels in valloader:
+            batch_data = batch_data.to(device)
+            batch_labels = batch_labels.to(device)
+            if ten_crop:
+                bs, ncrops, c, h, w = batch_data.size()
+                batch_data = batch_data.view(-1, c, h, w)
+                output = model(batch_data)
+                output = output.view(bs, ncrops, -1).mean(1)
+            else:
+                output = model(batch_data)
+            total_val_loss += sum_loss_fn(output, batch_labels).item()
+            _, predicted = torch.max(output, 1)
+            correct_val += (predicted == batch_labels).sum().item()
+            total_val += batch_labels.size(0)
+    val_acc = correct_val / total_val if total_val > 0 else 0
+    return total_val_loss / len(valloader.dataset), val_acc
 
 
 def basic_train_loop(
@@ -31,6 +45,8 @@ def basic_train_loop(
     valloader=None,
     device=DEVICE,
     experiment_name="default",
+    ten_crop = False,
+    report_validation_metrics = True,
 ):
     """
     loss_method should accept an argument: reduction
@@ -77,7 +93,10 @@ def basic_train_loop(
 
     for t in range(epochs):
         epoch_loss = 0
+        total_train, correct_train = 0, 0
         training_logger.info(f"Starting epoch {t}")
+        train_start = time.time()
+        model.train()
         for batch_data, batch_labels in tqdm(trainloader, leave=False):
             if device is not None and (
                 batch_data.device.type != device.type
@@ -89,13 +108,30 @@ def basic_train_loop(
             batch_loss = ave_loss_fn(output, batch_labels)
             batch_loss.backward()
             optimizer.step()
-            epoch_loss += batch_loss
-        else:
-            model.eval()
-            epoch_val_loss = compute_validation_loss(model, sum_loss_fn, valloader)
-            training_logger.info(
-                f"Epoch {t}: total loss = {epoch_loss:.2f}, val loss = {epoch_val_loss}"
-            )
-            model.train()
+            sumloss = batch_loss.item() * batch_data.size(0)
+            epoch_loss += sumloss
+            _, predicted = torch.max(output, 1)
+            correct_train += (predicted == batch_labels).sum().item()
+            total_train += batch_labels.size(0)
+        train_end = time.time()
+        train_duration = round((train_end - train_start)/60, 2)
+        epoch_loss /= len(trainloader.dataset)
+        train_acc = correct_train / total_train
 
+        # Eval model
+        if report_validation_metrics and valloader is not None:
+            val_start = time.time()
+            epoch_val_loss, val_acc = compute_validation_loss(model, sum_loss_fn, valloader, device, ten_crop)
+            val_end = time.time()
+            val_duration = round((val_end - val_start)/60, 2)
+            training_logger.info(
+                f"Epoch {t}: Training Loss = {epoch_loss:.2f}, Validation Loss = {epoch_val_loss:.2f}, "
+                f"Training Acc. = {train_acc:.4f}, Validation Acc. = {val_acc:.4f}, "
+                f"Training Time = {train_duration:.2f}m, Validation Time = {val_duration:.2f}m"
+            )
+        else:
+            training_logger.info(
+                f"Epoch {t}: Training Loss = {epoch_loss:.2f}, Training Acc. = {train_acc:.4f}, "
+                f"Training Time = {train_duration:.2f}m"
+            )
     return

@@ -4,6 +4,9 @@ import torch.nn as nn
 
 from egop_optimizer.models.TinyMNISTClassifier import TinyMNISTClassifier
 from egop_optimizer.models.LinearFeedforward import LinearFeedforward
+from egop_optimizer.models.ImagenetClassifier import (
+    ImageNet_model_34_layer_residual,
+)
 from egop_optimizer.models.FashionMNISTClassfier import FashionMNISTClassifier
 
 import pdb
@@ -11,6 +14,7 @@ import pdb
 MODEL_METHOD_LIST = [
     TinyMNISTClassifier,
     lambda seed=None: LinearFeedforward(seed=seed, **_DEFAULT_LINEAR_NETWORK_PARAMS),
+    ImageNet_model_34_layer_residual,
     FashionMNISTClassifier,
 ]
 
@@ -86,8 +90,10 @@ class TestReinitialization(unittest.TestCase):
             model = model_method()
             model.reinitialize()
             first_init_params = dict_of_parameters(model)
+            # print(f"first_init_params: {first_init_params}")
             model.reinitialize()
             second_init_params = dict_of_parameters(model)
+            # print(f"second_init_params: {second_init_params}")
 
             self.assertFalse(
                 param_dicts_equal(first_init_params, second_init_params),
@@ -189,9 +195,11 @@ def dict_of_parameters(model):
         - The returned tensors contain parameter values only (no gradients).
     """
     param_dict = dict()
-    for idx, layer in enumerate(model.children()):
+    for idx, layer in enumerate(model.modules()):
         if isinstance(layer, (nn.Conv2d, nn.Linear)):
             param_dict[idx] = layer_params_as_vector(layer)
+    # for idx,layer in enumerate(model.modules()):
+    #     print(f"Modules {layer}")
     return param_dict
 
 

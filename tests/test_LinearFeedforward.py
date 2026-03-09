@@ -6,6 +6,8 @@ from egop_optimizer.models.LinearFeedforward import LinearFeedforward
 from egop_optimizer.dataloaders.linear_networks_dataloader import (
     linear_networks_dataloader,
 )
+from egop_optimizer.utils.device_utils import get_available_device
+DEVICE = get_available_device()
 
 _DEFAULT_NETWORK_PARAMS = {
     "input_size": 10,
@@ -51,6 +53,7 @@ class TestBasicSetup(unittest.TestCase):
             None: Raises an exception if the forward pass fails.
         """
         model = LinearFeedforward(**_DEFAULT_NETWORK_PARAMS)
+        model = model.to(DEVICE)
         trainloader, _, _ = linear_networks_dataloader(
             batch_size=batch_size,
             input_size=_DEFAULT_NETWORK_PARAMS["input_size"],
