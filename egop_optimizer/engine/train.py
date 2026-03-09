@@ -97,7 +97,7 @@ def basic_train_loop(
             batch_loss = ave_loss_fn(output, batch_labels)
             batch_loss.backward()
             optimizer.step()
-            epoch_loss += batch_loss
+            epoch_loss += batch_loss * batch_data.size(0)
         train_end = time.time()
         train_duration = train_end - train_start
         epoch_loss /= len(trainloader.dataset)
