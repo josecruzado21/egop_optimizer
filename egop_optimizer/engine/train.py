@@ -15,6 +15,7 @@ DEVICE = get_available_device()
 def compute_validation_loss(model, sum_loss_fn, valloader):
     total_val_loss = 0
     for batch_data, batch_labels in valloader:
+        batch_data, batch_labels = batch_data.to(DEVICE), batch_labels.to(DEVICE)
         output = model(batch_data)
         total_val_loss += sum_loss_fn(output, batch_labels)
     # Average over dataset size
