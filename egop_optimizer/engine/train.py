@@ -97,11 +97,7 @@ def basic_train_loop(
         training_logger.info(f"Starting epoch {t}")
         train_start = time.time()
         model.train()
-        counter = 0
         for batch_data, batch_labels in tqdm(trainloader, leave=False):
-            counter += 1
-            if counter >10:
-                break
             if device is not None and (
                 batch_data.device.type != device.type
                 or batch_labels.device.type != device.type
