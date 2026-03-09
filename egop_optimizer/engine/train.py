@@ -27,8 +27,6 @@ def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_cr
             else:
                 output = model(batch_data)
             total_val_loss += sum_loss_fn(output, batch_labels).item()
-    print("val loss: ", total_val_loss)
-    print("val dataset length: ", len(valloader.dataset))
     return total_val_loss / len(valloader.dataset)
 
 
@@ -90,12 +88,8 @@ def basic_train_loop(
     for t in range(epochs):
         epoch_loss = 0
         training_logger.info(f"Starting epoch {t}")
-        counter = 0
         train_start = time.time()
         for batch_data, batch_labels in tqdm(trainloader, leave=False):
-            counter += 1
-            if counter >10:
-                break
             if device is not None and (
                 batch_data.device.type != device.type
                 or batch_labels.device.type != device.type
@@ -104,16 +98,12 @@ def basic_train_loop(
             optimizer.zero_grad()
             output = model(batch_data)
             batch_loss = ave_loss_fn(output, batch_labels)
-            print(f"Batch avg loss: {batch_loss.item()}, batch size: {batch_data.size(0)}")
             batch_loss.backward()
             optimizer.step()
             sumloss = batch_loss.item() * batch_data.size(0)
-            print(f"Batch sum loss: {sumloss}")
             epoch_loss += sumloss
         train_end = time.time()
         train_duration = train_end - train_start
-        print("epoch loss: ", epoch_loss)
-        print("dataset length: ", len(trainloader.dataset))
         epoch_loss /= len(trainloader.dataset)
 
         # Eval model
