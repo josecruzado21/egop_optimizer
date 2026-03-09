@@ -115,8 +115,7 @@ def basic_train_loop(
             sumloss = batch_loss.item() * batch_data.size(0)
             epoch_loss += sumloss
             _, predicted = torch.max(output, 1)
-            correct_val += (predicted == batch_labels).sum().item()
-            total_val += batch_labels.size(0)
+            correct_train += (predicted == batch_labels).sum().item()
             total_train += batch_labels.size(0)
         train_end = time.time()
         train_duration = round((train_end - train_start)/60, 2)
