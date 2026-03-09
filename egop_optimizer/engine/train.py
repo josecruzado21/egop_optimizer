@@ -12,13 +12,15 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 
-def compute_validation_loss(model, sum_loss_fn, valloader):
-    total_val_loss = 0
-    for batch_data, batch_labels in valloader:
-        batch_data, batch_labels = batch_data.to(DEVICE), batch_labels.to(DEVICE)
-        output = model(batch_data)
-        total_val_loss += sum_loss_fn(output, batch_labels)
-    # Average over dataset size
+def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE):
+    total_val_loss = 0.0
+    model.eval()
+    with torch.no_grad():
+        for batch_data, batch_labels in valloader:
+            batch_data = batch_data.to(device, non_blocking=True)
+            batch_labels = batch_labels.to(device, non_blocking=True)
+            output = model(batch_data)
+            total_val_loss += sum_loss_fn(output, batch_labels).item()
     return total_val_loss / len(valloader.dataset)
 
 
@@ -97,7 +99,6 @@ def basic_train_loop(
             epoch_loss += batch_loss
 
         # Eval model
-        model.eval()
         epoch_val_loss = compute_validation_loss(model, sum_loss_fn, valloader)
         training_logger.info(
             f"Epoch {t}: total loss = {epoch_loss:.2f}, val loss = {epoch_val_loss}"
