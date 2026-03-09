@@ -81,7 +81,7 @@ def basic_train_loop(
         counter = 0
         for batch_data, batch_labels in tqdm(trainloader, leave=False):
             counter += 1
-            if counter >4: # for quick testing, remove this line for full training
+            if counter >100:
                 break
             if device is not None and (
                 batch_data.device.type != device.type
@@ -94,12 +94,13 @@ def basic_train_loop(
             batch_loss.backward()
             optimizer.step()
             epoch_loss += batch_loss
-        else:
-            model.eval()
-            epoch_val_loss = compute_validation_loss(model, sum_loss_fn, valloader)
-            training_logger.info(
-                f"Epoch {t}: total loss = {epoch_loss:.2f}, val loss = {epoch_val_loss}"
-            )
-            model.train()
+
+        # Eval model
+        model.eval()
+        epoch_val_loss = compute_validation_loss(model, sum_loss_fn, valloader)
+        training_logger.info(
+            f"Epoch {t}: total loss = {epoch_loss:.2f}, val loss = {epoch_val_loss}"
+        )
+        model.train()
 
     return

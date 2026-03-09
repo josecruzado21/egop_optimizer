@@ -97,7 +97,7 @@ def ImageNet_dataloader(
     class_list: list = None,
     augment: bool = True,
     seed: int = 42,
-    num_workers: int = 8,
+    num_workers: int = 1,
     prefetch_factor: int = 3,
     persistent_workers: bool = True,
     ten_crop: bool = False
