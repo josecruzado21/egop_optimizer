@@ -95,9 +95,12 @@ def basic_train_loop(
             optimizer.zero_grad()
             output = model(batch_data)
             batch_loss = ave_loss_fn(output, batch_labels)
+            print(f"Batch avg loss: {batch_loss.item()}, batch size: {batch_data.size(0)}")
             batch_loss.backward()
             optimizer.step()
-            epoch_loss += batch_loss * batch_data.size(0)
+            sumloss = batch_loss.item() * batch_data.size(0)
+            print(f"Batch sum loss: {sumloss}")
+            epoch_loss += sumloss
         train_end = time.time()
         train_duration = train_end - train_start
         epoch_loss /= len(trainloader.dataset)
