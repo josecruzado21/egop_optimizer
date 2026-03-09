@@ -23,8 +23,8 @@ def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_cr
             if ten_crop:
                 bs, ncrops, c, h, w = batch_data.size()
                 batch_data = batch_data.view(-1, c, h, w)
-                outputs = model(batch_data)
-                outputs = outputs.view(bs, ncrops, -1).mean(1)
+                output = model(batch_data)
+                output = output.view(bs, ncrops, -1).mean(1)
             else:
                 output = model(batch_data)
             total_val_loss += sum_loss_fn(output, batch_labels).item()
