@@ -27,5 +27,6 @@ if __name__ == "__main__":
         LR_scheduler=None,
         valloader=valloader,
         experiment_name="ImageNet_resnet34_OG",
-        ten_crop=ten_crop
+        ten_crop=ten_crop,
+        report_validation_metrics=True,
     )
