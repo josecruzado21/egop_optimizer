@@ -12,15 +12,23 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 
-def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE):
+def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_crop=False):
     total_val_loss = 0.0
     model.eval()
     with torch.no_grad():
         for batch_data, batch_labels in valloader:
-            batch_data = batch_data.to(device, non_blocking=True)
-            batch_labels = batch_labels.to(device, non_blocking=True)
-            output = model(batch_data)
+            batch_data = batch_data.to(device)
+            batch_labels = batch_labels.to(device)
+            if ten_crop:
+                bs, ncrops, c, h, w = batch_data.size()
+                batch_data = batch_data.view(-1, c, h, w)
+                outputs = model(batch_data)
+                outputs = outputs.view(bs, ncrops, -1).mean(1)
+            else:
+                output = model(batch_data)
             total_val_loss += sum_loss_fn(output, batch_labels).item()
+    print("val loss: ", total_val_loss)
+    print("val dataset length: ", len(valloader.dataset))
     return total_val_loss / len(valloader.dataset)
 
 
@@ -34,6 +42,7 @@ def basic_train_loop(
     valloader=None,
     device=DEVICE,
     experiment_name="default",
+    ten_crop = False
 ):
     """
     loss_method should accept an argument: reduction
@@ -85,7 +94,7 @@ def basic_train_loop(
         train_start = time.time()
         for batch_data, batch_labels in tqdm(trainloader, leave=False):
             counter += 1
-            if counter >100:
+            if counter >10:
                 break
             if device is not None and (
                 batch_data.device.type != device.type
@@ -103,11 +112,13 @@ def basic_train_loop(
             epoch_loss += sumloss
         train_end = time.time()
         train_duration = train_end - train_start
+        print("epoch loss: ", epoch_loss)
+        print("dataset length: ", len(trainloader.dataset))
         epoch_loss /= len(trainloader.dataset)
 
         # Eval model
         val_start = time.time()
-        epoch_val_loss = compute_validation_loss(model, sum_loss_fn, valloader, device)
+        epoch_val_loss = compute_validation_loss(model, sum_loss_fn, valloader, device, ten_crop)
         val_end = time.time()
         val_duration = val_end - val_start
         training_logger.info(

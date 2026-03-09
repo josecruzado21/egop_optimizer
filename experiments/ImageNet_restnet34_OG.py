@@ -8,10 +8,10 @@ from egop_optimizer.dataloaders.ImageNet_dataloader import ImageNet_dataloader
 
 if __name__ == "__main__":
     model = ImageNet_model_34_layer_residual()
-
+    ten_crop = True
     # ImageNet dataset path (cluster)
     data_dir = Path("/share/data/vdata/imagenet1k")
-    trainloader, valloader = ImageNet_dataloader(root=data_dir, batch_size=256)
+    trainloader, valloader = ImageNet_dataloader(root=data_dir, batch_size=256, ten_crop=ten_crop)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
     loss_method = lambda reduction: torch.nn.CrossEntropyLoss(reduction=reduction)
@@ -27,4 +27,5 @@ if __name__ == "__main__":
         LR_scheduler=None,
         valloader=valloader,
         experiment_name="ImageNet_resnet34_OG",
+        ten_crop=ten_crop
     )
