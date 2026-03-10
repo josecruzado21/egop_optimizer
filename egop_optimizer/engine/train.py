@@ -1,5 +1,4 @@
 import os
-
 import torch
 import logging
 from datetime import datetime
@@ -11,6 +10,49 @@ from egop_optimizer.utils.device_utils import get_available_device
 
 DEVICE = get_available_device()
 
+def save_checkpoint(
+    model,
+    optimizer,
+    epoch,
+    path,
+    scheduler=None,
+    metrics=None
+):
+
+    checkpoint = {
+        "epoch": epoch,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+    }
+
+    if scheduler is not None:
+        checkpoint["scheduler_state_dict"] = scheduler.state_dict()
+
+    if metrics is not None:
+        checkpoint.update(metrics)
+
+    torch.save(checkpoint, path)
+
+def load_checkpoint(model, optimizer, path, scheduler=None, device=DEVICE):
+
+    checkpoint = torch.load(path, map_location=device)
+
+    model.load_state_dict(checkpoint["model_state_dict"])
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+
+    if scheduler is not None and "scheduler_state_dict" in checkpoint:
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    start_epoch = checkpoint["epoch"] + 1
+
+    train_losses = checkpoint.get("train_losses", [])
+    train_accuracies = checkpoint.get("train_accuracies", [])
+    train_times = checkpoint.get("train_times", [])
+    val_losses = checkpoint.get("val_losses", [])
+    val_accuracies = checkpoint.get("val_accuracies", [])
+    val_times = checkpoint.get("val_times", [])
+
+    return start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times
 
 def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_crop=False):
     """
@@ -60,6 +102,7 @@ def basic_train_loop(
     experiment_name="default",
     ten_crop = False,
     report_validation_metrics = True,
+    checkpoint = True,
 ):
     """
    Runs a basic training loop for a PyTorch model, with optional validation and logging.
@@ -86,7 +129,15 @@ def basic_train_loop(
         None
     """
     log_dir = f"logs/{experiment_name}"
-    os.makedirs(log_dir, exist_ok=True)
+    suffix = 0
+    while os.path.exists(log_dir):
+        suffix += 1
+        log_dir = f"logs/{experiment_name}_cont{suffix}"
+    os.makedirs(log_dir)
+    if checkpoint:
+        ckpt_dir = os.path.join(log_dir, "checkpoints")
+        os.makedirs(ckpt_dir, exist_ok=True)
+        latest_ckpt = os.path.join(ckpt_dir, "latest.pt")
     info_log_path = os.path.join(log_dir, "info.log")
     training_log_path = os.path.join(log_dir, "training.log")
     for handler in logging.root.handlers[:]:
@@ -117,6 +168,25 @@ def basic_train_loop(
     info_logger.info(f"Scheduler: {LR_scheduler}")
     info_logger.info(f"Device: {device}")
 
+    start_epoch = 0
+    train_losses = []
+    train_accuracies = []
+    train_times = []
+    val_losses = []
+    val_accuracies = []
+    val_times = []
+
+    if checkpoint and os.path.exists(latest_ckpt):
+        start_epoch, train_losses, train_times, train_accuracies, val_losses, val_accuracies, val_times = load_checkpoint(
+            model,
+            optimizer,
+            latest_ckpt,
+            scheduler=LR_scheduler,
+            device=device
+        )
+
+        training_logger.info(f"Resuming training from epoch {start_epoch}")
+
     if device is not None:
         model = model.to(device)
     ave_loss_fn = loss_method(reduction="mean")
@@ -125,7 +195,9 @@ def basic_train_loop(
         training_logger.error("Scheduler not yet supported.")
         raise Exception("Scheduler not yet supported.")
 
-    for t in range(epochs):
+    for t in range(start_epoch, epochs + 1):
+        if checkpoint:
+            ckpt_path = os.path.join(ckpt_dir, f"epoch_{t}.pt")
         epoch_loss = 0
         total_train, correct_train = 0, 0
         training_logger.info(f"Starting epoch {t}")
@@ -151,13 +223,19 @@ def basic_train_loop(
         train_duration = round((train_end - train_start)/60, 2)
         epoch_loss /= len(trainloader.dataset)
         train_acc = correct_train / total_train
+        train_losses.append(epoch_loss)
+        train_accuracies.append(train_acc)
+        train_times.append(train_duration)
 
         # Eval model
         if report_validation_metrics and valloader is not None:
             val_start = time.time()
             epoch_val_loss, val_acc = compute_validation_loss(model, sum_loss_fn, valloader, device, ten_crop)
+            val_losses.append(epoch_val_loss)
+            val_accuracies.append(val_acc)
             val_end = time.time()
             val_duration = round((val_end - val_start)/60, 2)
+            val_times.append(val_duration)
             training_logger.info(
                 f"Epoch {t}: Training Loss = {epoch_loss:.2f}, Validation Loss = {epoch_val_loss:.2f}, "
                 f"Training Acc. = {train_acc:.4f}, Validation Acc. = {val_acc:.4f}, "
@@ -167,4 +245,22 @@ def basic_train_loop(
             training_logger.info(
                 f"Epoch {t}: Training Loss = {epoch_loss:.2f}, Training Acc. = {train_acc:.4f}, "
                 f"Training Time = {train_duration:.2f}m"
+            )
+        
+
+        if checkpoint:
+            save_checkpoint(
+                model,
+                optimizer,
+                t,
+                latest_ckpt,
+                scheduler=LR_scheduler,
+                metrics={
+                    "train_losses": train_losses,
+                    "train_accuracies": train_accuracies,
+                    "train_times": train_times,
+                    "val_losses": val_losses,
+                    "val_accuracies": val_accuracies,
+                    "val_times": val_times,
+                }
             )
