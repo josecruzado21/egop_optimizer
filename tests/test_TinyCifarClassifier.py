@@ -16,24 +16,25 @@ DEVICE = get_available_device()
 
 def load_cifar_debugging_subset():
     # Locate raw_data folder, assumed to be in same folder as egop_optimizer
-    base = Path(__file__).resolve()
-    data_dir = base.parents[2] / "raw_data" / "Cifar10"
-    return CIFAR10_dataloader(
-        # use large batches for faster testing
-        batch_size=100,
-        # use a single class for faster testing
-        num_classes=1,
-        data_dir=data_dir,
-        # use a tiny percent of data for faster testing
-        dev_split=0.01,
-        class_list=None,
-        augment=False,
-        use_stratified_split=False,
-        seed=42,
-        num_workers=0,
-        use_cached=True,
-    )
-    return
+    # base = Path(__file__).resolve()
+    # data_dir = base.parents[2] / "raw_data" / "Cifar10"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        data_dir = Path(tmpdir)
+        return CIFAR10_dataloader(
+            # use large batches for faster testing
+            batch_size=100,
+            # use a single class for faster testing
+            num_classes=1,
+            data_dir=data_dir,
+            # use a tiny percent of data for faster testing
+            dev_split=0.01,
+            class_list=None,
+            augment=False,
+            use_stratified_split=False,
+            seed=42,
+            num_workers=0,
+            use_cached=True,
+        )
 
 
 class TestBasic(unittest.TestCase):
