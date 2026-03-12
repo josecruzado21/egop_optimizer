@@ -34,7 +34,10 @@ class TestCIFAR10Dataloaders(unittest.TestCase):
             raw_data_dir = Path(tmpdir) / "raw"
             raw_data_dir.mkdir(parents=True, exist_ok=True)
             CIFAR10_cache_dataset(
-                data_dir=raw_data_dir, save_dir=save_dir, verbose=False, delete_raw=False
+                data_dir=raw_data_dir,
+                save_dir=save_dir,
+                verbose=False,
+                delete_raw=False,
             )
             train_file = save_dir / "train" / "train.pt"
             test_file = save_dir / "test" / "test.pt"
