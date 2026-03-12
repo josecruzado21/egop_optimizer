@@ -103,6 +103,7 @@ def basic_train_loop(
     ten_crop = False,
     report_validation_metrics = True,
     checkpoint = True,
+    initial_metrics = True,
 ):
     """
    Runs a basic training loop for a PyTorch model, with optional validation and logging.
@@ -194,6 +195,33 @@ def basic_train_loop(
     if LR_scheduler is not None:
         training_logger.error("Scheduler not yet supported.")
         raise Exception("Scheduler not yet supported.")
+    
+    # --- Initial metrics reporting ---
+    if initial_metrics:
+        model.train()
+        with torch.no_grad():
+            total_train_loss = 0.0
+            total_train, correct_train = 0, 0
+            for batch_data, batch_labels in trainloader:
+                batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
+                output = model(batch_data)
+                total_train_loss += sum_loss_fn(output, batch_labels).item()
+                _, predicted = torch.max(output, 1)
+                correct_train += (predicted == batch_labels).sum().item()
+                total_train += batch_labels.size(0)
+        initial_train_loss = total_train_loss / len(trainloader.dataset)
+        initial_train_acc = correct_train / total_train if total_train > 0 else 0
+
+        training_logger.info(
+            f"Initial Training Loss = {initial_train_loss:.2f}, Initial Training Acc. = {initial_train_acc:.4f}"
+        )
+
+        # Compute initial validation metrics if valloader is provided
+        if valloader is not None:
+            initial_val_loss, initial_val_acc = compute_validation_loss(model, sum_loss_fn, valloader, device, ten_crop)
+            training_logger.info(
+                f"Initial Validation Loss = {initial_val_loss:.2f}, Initial Validation Acc. = {initial_val_acc:.4f}"
+            )
 
     for t in range(start_epoch, epochs + 1):
         if checkpoint:
