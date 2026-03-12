@@ -12,112 +12,18 @@ import pdb
 DEVICE = get_available_device()
 
 
-def compute_k_gradients_linear_module(
-    model_OG,
-    module_name,
-    data_loader,
-    criterion,
-    k,
-    device=DEVICE,
-    recalculate_V=False,
-    current_model=None,
-):
-    infinite_loader = itertools.cycle(data_loader)
-    model_OG = model_OG.to(device)
-    module_OG = dict(model_OG.named_modules())[module_name]
-    if recalculate_V:
-        current_state_dict = {
-            k: (
-                module.recover_original_weights().detach().clone()
-                if hasattr(module, "recover_original_weights")
-                else v.detach().clone()
-            )
-            for k, v in current_model.state_dict().items()
-            for name, module in current_model.named_modules()
-            if name in k and k in model_OG.state_dict()
-        }
-        model_OG.load_state_dict(current_state_dict, strict=False)
-        model_OG.zero_grad()
-        original_weights_module = module_OG.weight.data.clone()
-        del current_state_dict
-    gradients = []
-    for _ in tqdm(range(k), leave=False):
-        if recalculate_V:
-            perturbation = torch.rand_like(module_OG.weight)
-            module_OG.weight.data += perturbation
-        else:
-            model_OG.reinitialize()
-        model_OG.zero_grad()
-        x, y = next(infinite_loader)
-        x = x.to(device)
-        y = y.to(device)
-        output = model_OG(x)
-        loss = criterion(output, y)
-        loss.backward()
-        grad = module_OG.weight.grad.detach().clone().flatten().to("cpu")
-        gradients.append(grad)
-        if recalculate_V:
-            module_OG.weight.data = original_weights_module.clone()
-    return torch.stack(gradients, dim=0).T
-
-
-def compute_k_gradients_cnn_module(
-    model_OG,
-    module_name,
-    data_loader,
-    criterion,
-    k,
-    device=DEVICE,
-    recalculate_V=False,
-    current_model=None,
-):
-    infinite_loader = itertools.cycle(data_loader)
-    model_OG = model_OG.to(device)
-    module_OG = dict(model_OG.named_modules())[module_name]
-    if recalculate_V:
-        current_state_dict = {
-            k: (
-                module.recover_original_weights().detach().clone()
-                if hasattr(module, "recover_original_weights")
-                else v.detach().clone()
-            )
-            for k, v in current_model.state_dict().items()
-            for name, module in current_model.named_modules()
-            if name in k and k in model_OG.state_dict()
-        }
-        model_OG.load_state_dict(current_state_dict, strict=False)
-        model_OG.zero_grad()
-        original_weights_module = module_OG.weight.data.clone()
-        del current_state_dict
-    n_filters = module_OG.weight.shape[0]
-    gradients = []
-    k = math.ceil(k / module_OG.out_channels)
-    for _ in tqdm(range(k), leave=False):
-        if recalculate_V:
-            perturbation = torch.empty_like(module_OG.weight)
-            torch.nn.init.kaiming_normal_(
-                perturbation, mode="fan_in", nonlinearity="relu"
-            )
-            module_OG.weight.data += perturbation
-        else:
-            model_OG.reinitialize()
-        model_OG.zero_grad()
-        x, y = next(infinite_loader)
-        x = x.to(device)
-        y = y.to(device)
-        output = model_OG(x)
-        loss = criterion(output, y)
-        loss.backward()
-        grad = module_OG.weight.grad.detach().clone().flatten().to("cpu")
-        gradients.append(grad.view(n_filters, -1))
-        if recalculate_V:
-            module_OG.weight.data = original_weights_module.clone()
-    gradients_tensor = torch.stack(gradients, dim=2)
-    n_params_per_kernel = gradients_tensor.shape[1]
-    return gradients_tensor.permute(1, 0, 2).reshape(n_params_per_kernel, -1)
-
-
 def compute_V(gradients, use_randomized_svd=False, n_components=None):
+    """
+    Computes the EGOP eigenbasis based on tensor of gradients
+
+    Args:
+        gradients (torch.Tensor): Input tensor of shape (num_params, num_samples)
+        use_randomized_svd (bool): Whether to use svd_lowrank
+        n_components (int): Estimated rank of grad matrix for svd_lowrank
+
+    Returns:
+        torch.Tensor: U and orthonormal matrix of shape (num_params, q) for q <= num_params
+    """
     if use_randomized_svd:
         if n_components is None:
             # otherwise default = 6, which can lead to overly low-rank approximations
@@ -127,101 +33,6 @@ def compute_V(gradients, use_randomized_svd=False, n_components=None):
         U, S, V = torch.svd(gradients, some=False, compute_uv=True)
         U, S, V = U.cpu(), S.cpu(), V.cpu()
     return U
-
-
-def compute_V_by_layer_per_layer(
-    model_OG,
-    k,
-    data_loader,
-    criterion,
-    device=DEVICE,
-    reparam_linear_layers=False,
-    n_components=None,
-    recalculate_V=False,
-    verbose=True,
-    current_model=None,
-):
-    model_OG = model_OG.to(device)
-    current_model = current_model.to(device) if current_model is not None else None
-    EGOP_eigenbasis = dict()
-    start_time_total = time.time()
-    if not verbose:
-        print("-" * 100)
-        print("Computing V by layer:")
-        print("-" * 100)
-    for name, module in model_OG.named_modules():
-        if isinstance(module, nn.Conv2d):
-            if verbose:
-                print()
-                print("-" * 100)
-                print(f"Computing V for layer Convolutional layer {name}:")
-                print("-" * 100)
-                print(f"Computing {k} gradients:")
-            start_time_gradients = time.time()
-            gradients_cnn = compute_k_gradients_cnn_module(
-                model_OG,
-                name,
-                data_loader,
-                criterion,
-                k,
-                device,
-                recalculate_V=recalculate_V,
-                current_model=current_model,
-            )
-            if verbose:
-                print(
-                    f"Gradients computed in {time.time() - start_time_gradients:.2f} seconds"
-                )
-            start_time_eigendecomposition = time.time()
-            if device == "cuda":
-                gradients_cnn = gradients_cnn.to(device)
-            EGOP_eigenbasis[name] = compute_V(gradients_cnn)
-            if verbose:
-                print(
-                    f"Computed V with shape {EGOP_eigenbasis[name].shape} in {time.time() - start_time_eigendecomposition:.2f} seconds"
-                )
-            del gradients_cnn
-        elif isinstance(module, nn.Linear) and reparam_linear_layers:
-            if verbose:
-                print()
-                print("-" * 100)
-                print(f"Computing V for layer Linear layer {name}:")
-                print("-" * 100)
-                print(f"Computing {k} gradients:")
-            start_time_gradients = time.time()
-            k_linear = k // 10
-            gradients_linear = compute_k_gradients_linear_module(
-                model_OG,
-                name,
-                data_loader,
-                criterion,
-                k_linear,
-                device,
-                recalculate_V=recalculate_V,
-                current_model=current_model,
-            )
-            if verbose:
-                print(
-                    f"Gradients computed in {time.time() - start_time_gradients:.2f} seconds"
-                )
-            start_time_eigendecomposition = time.time()
-            if device == "cuda":
-                gradients_linear = gradients_linear.to(device)
-            EGOP_eigenbasis[name] = compute_V(
-                gradients_linear, use_randomized_svd=True, n_components=n_components
-            )
-            if verbose:
-                print(
-                    f"Computed V with shape {EGOP_eigenbasis[name].shape} in {time.time() - start_time_eigendecomposition:.2f} seconds"
-                )
-            del gradients_linear
-    end_time_total = time.time()
-    print(
-        "Total time to compute V by layer: {:.2f} seconds".format(
-            end_time_total - start_time_total
-        )
-    )
-    return EGOP_eigenbasis
 
 
 def compute_k_gradients_all_layers(
@@ -338,22 +149,9 @@ def compute_V_by_layer(
     recalculate_V=False,
     current_model=None,
     per_layer=False,
-    verbose=False,
 ):
     if per_layer:
         raise Exception("Option per_layer not yet supported.")
-        # compute_V_by_layer_per_layer(
-        #     model_OG=model_OG,
-        #     k=k,
-        #     data_loader=data_loader,
-        #     criterion=criterion,
-        #     device=device,
-        #     reparam_linear_layers=reparam_linear_layers,
-        #     n_components=n_components,
-        #     recalculate_V=recalculate_V,
-        #     verbose=verbose,
-        #     current_model=current_model,
-        # )
     else:
         beg = time.time()
         gradients = compute_k_gradients_all_layers(

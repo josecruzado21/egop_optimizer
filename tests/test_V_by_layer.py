@@ -21,6 +21,9 @@ TODO'S:
 
 
 def get_V_dict_for_TinyMNIST(OG_model, use_randomized_svd):
+    """
+    Instantiates dataloaders, criterion, and runs compute_V_by_layer
+    """
     trainloader, _, _ = tinyMNIST_dataloader(batch_size=128)
     criterion = torch.nn.CrossEntropyLoss(reduction="mean")
 
@@ -36,6 +39,9 @@ def get_V_dict_for_TinyMNIST(OG_model, use_randomized_svd):
 def get_V_dict_for_Cifar10(
     OG_model, use_randomized_svd=False, reparam_linear_layers=False
 ):
+    """
+    Instantiates dataloaders, criterion, and runs compute_V_by_layer
+    """
     trainloader, _, _ = load_cifar_debugging_subset()
     criterion = torch.nn.CrossEntropyLoss(reduction="mean")
 
