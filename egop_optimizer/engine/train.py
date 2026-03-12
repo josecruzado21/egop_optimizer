@@ -56,6 +56,7 @@ def basic_train_loop(
     loss_method,
     LR_scheduler=None,
     valloader=None,
+    testloader=None,
     device=DEVICE,
     experiment_name="default",
     ten_crop = False,
@@ -168,3 +169,10 @@ def basic_train_loop(
                 f"Epoch {t}: Training Loss = {epoch_loss:.2f}, Training Acc. = {train_acc:.4f}, "
                 f"Training Time = {train_duration:.2f}m"
             )
+
+    # Final test evaluation
+    if testloader is not None:
+        test_loss, test_acc = compute_validation_loss(model, sum_loss_fn, testloader, device, ten_crop)
+        training_logger.info(
+            f"Final Test Loss = {test_loss:.4f}, Test Acc. = {test_acc:.4f}"
+        )
