@@ -159,12 +159,12 @@ def basic_train_loop(
             val_end = time.time()
             val_duration = round((val_end - val_start)/60, 2)
             training_logger.info(
-                f"Epoch {t}: Training Loss = {epoch_loss:.2f}, Validation Loss = {epoch_val_loss:.2f}, "
+                f"Epoch {t}: Training Loss = {epoch_loss:.4f}, Validation Loss = {epoch_val_loss:.4f}, "
                 f"Training Acc. = {train_acc:.4f}, Validation Acc. = {val_acc:.4f}, "
                 f"Training Time = {train_duration:.2f}m, Validation Time = {val_duration:.2f}m"
             )
         else:
             training_logger.info(
-                f"Epoch {t}: Training Loss = {epoch_loss:.2f}, Training Acc. = {train_acc:.4f}, "
+                f"Epoch {t}: Training Loss = {epoch_loss:.4f}, Training Acc. = {train_acc:.4f}, "
                 f"Training Time = {train_duration:.2f}m"
             )
