@@ -1,3 +1,12 @@
+"""
+Training loop matching old repo's run_fashionMNIST_og_only.py logic:
+- Training loss: running_loss / len(trainloader) (mean of batch means), computed during training
+- Training acc: correct / total, computed during training
+- Validation loss: same approach (mean of batch means) in eval() mode
+- Validation acc: correct / total in eval() mode
+- All using criterion = CrossEntropyLoss(reduction='mean')
+"""
+
 import os
 
 import torch
@@ -10,12 +19,13 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 
-def _evaluate(model, dataloader, sum_loss_fn, device, ten_crop=False):
+def _evaluate(model, dataloader, criterion, device, ten_crop=False):
     """
-    Evaluate model on a dataset. Returns (per-sample avg loss, accuracy).
-    Uses reduction='sum' and divides by dataset size (old repo style).
+    Evaluate model on a dataset in eval() mode.
+    Returns (mean of batch mean losses, accuracy).
+    Matches old repo's validation phase in run_fashionMNIST_og_only.py.
     """
-    total_loss = 0.0
+    running_loss = 0.0
     total, correct = 0, 0
     model.eval()
     with torch.no_grad():
@@ -29,13 +39,13 @@ def _evaluate(model, dataloader, sum_loss_fn, device, ten_crop=False):
                 output = output.view(bs, ncrops, -1).mean(1)
             else:
                 output = model(batch_data)
-            total_loss += sum_loss_fn(output, batch_labels).item()
+            running_loss += criterion(output, batch_labels).item()
             _, predicted = torch.max(output, 1)
             correct += (predicted == batch_labels).sum().item()
             total += batch_labels.size(0)
     model.train()
     acc = correct / total if total > 0 else 0
-    return total_loss / len(dataloader.dataset), acc
+    return running_loss / len(dataloader), acc
 
 
 def basic_train_loop(
@@ -53,10 +63,10 @@ def basic_train_loop(
     report_validation_metrics=True,
 ):
     """
-    Training loop matching old repo's loss computation.
+    Training loop matching old repo's run_fashionMNIST_og_only.py.
 
-    After each epoch, training loss and accuracy are re-evaluated on the full
-    training set in eval() mode (same as old repo's get_loss + accuracy calls).
+    Training loss and accuracy are computed during the training pass itself
+    (not re-evaluated after). Uses reduction='mean' throughout.
     """
     log_dir = f"logs/{experiment_name}"
     os.makedirs(log_dir, exist_ok=True)
@@ -92,8 +102,7 @@ def basic_train_loop(
 
     if device is not None:
         model = model.to(device)
-    ave_loss_fn = loss_method(reduction="mean")
-    sum_loss_fn = loss_method(reduction="sum")
+    criterion = loss_method(reduction="mean")
     if LR_scheduler is not None:
         training_logger.error("Scheduler not yet supported.")
         raise Exception("Scheduler not yet supported.")
@@ -102,8 +111,10 @@ def basic_train_loop(
         training_logger.info(f"Starting epoch {t}")
         train_start = time.time()
 
-        # --- Training step (only updates weights) ---
+        # --- Training phase (matches old repo's train_og_model) ---
         model.train()
+        running_loss = 0.0
+        total_train, correct_train = 0, 0
         for batch_data, batch_labels in tqdm(trainloader, leave=False):
             if device is not None and (
                 batch_data.device.type != device.type
@@ -112,19 +123,23 @@ def basic_train_loop(
                 batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
             optimizer.zero_grad()
             output = model(batch_data)
-            batch_loss = ave_loss_fn(output, batch_labels)
-            batch_loss.backward()
+            loss = criterion(output, batch_labels)
+            loss.backward()
             optimizer.step()
+            running_loss += loss.item()
+            _, predicted = torch.max(output, 1)
+            total_train += batch_labels.size(0)
+            correct_train += (predicted == batch_labels).sum().item()
+
+        train_loss = running_loss / len(trainloader)
+        train_acc = correct_train / total_train
         train_end = time.time()
         train_duration = round((train_end - train_start) / 60, 2)
 
-        # --- Re-evaluate training loss & accuracy in eval() mode (old repo style) ---
-        train_loss, train_acc = _evaluate(model, trainloader, sum_loss_fn, device, ten_crop)
-
-        # --- Evaluate validation ---
+        # --- Validation phase ---
         if report_validation_metrics and valloader is not None:
             val_start = time.time()
-            val_loss, val_acc = _evaluate(model, valloader, sum_loss_fn, device, ten_crop)
+            val_loss, val_acc = _evaluate(model, valloader, criterion, device, ten_crop)
             val_end = time.time()
             val_duration = round((val_end - val_start) / 60, 2)
             training_logger.info(
@@ -140,7 +155,7 @@ def basic_train_loop(
 
     # Final test evaluation
     if testloader is not None:
-        test_loss, test_acc = _evaluate(model, testloader, sum_loss_fn, device, ten_crop)
+        test_loss, test_acc = _evaluate(model, testloader, criterion, device, ten_crop)
         training_logger.info(
             f"Final Test Loss = {test_loss:.10f}, Test Acc. = {test_acc:.10f}"
         )
