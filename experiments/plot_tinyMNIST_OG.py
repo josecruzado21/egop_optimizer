@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 
-LOG_DIR = Path(__file__).resolve().parent / "logs" / "tinyMNIST_OG"
+LOG_DIR = Path(__file__).resolve().parent / "logs" / "tinyMNIST_OG_new_train_method"
 
 SOLVER_STYLE = {
     "Adam":           {"color": "blue",  "label": "Adam"},

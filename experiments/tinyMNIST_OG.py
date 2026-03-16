@@ -1,8 +1,8 @@
 import torch
 import numpy as np
 
-# from egop_optimizer.engine.train import basic_train_loop
-from egop_optimizer.engine.train_old_repo import basic_train_loop
+from egop_optimizer.engine.train import basic_train_loop
+# from egop_optimizer.engine.train_old_repo import basic_train_loop
 from egop_optimizer.models.TinyMNISTClassifier import TinyMNISTClassifier
 from egop_optimizer.dataloaders.tinyMNIST_dataloader import tinyMNIST_dataloader
 
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         for trial in range(num_trials):
             seed = trial
             experiment_name = (
-                f"tinyMNIST_OG/{solver_name}/LR_{lr}/trial_{trial}"
+                f"tinyMNIST_OG_new_train_method/{solver_name}/LR_{lr}/trial_{trial}"
             )
 
             model = TinyMNISTClassifier(
