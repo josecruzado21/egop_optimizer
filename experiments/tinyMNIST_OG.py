@@ -1,7 +1,8 @@
 import torch
 import numpy as np
 
-from egop_optimizer.engine.train import basic_train_loop
+# from egop_optimizer.engine.train import basic_train_loop
+from egop_optimizer.engine.train_old_repo import basic_train_loop
 from egop_optimizer.models.TinyMNISTClassifier import TinyMNISTClassifier
 from egop_optimizer.dataloaders.tinyMNIST_dataloader import tinyMNIST_dataloader
 
@@ -19,7 +20,7 @@ solvers_to_run = ["Adam", "Adagrad", "GD", "GD_w_momentum"]
 
 # Training
 epochs = 200
-num_trials = 1
+num_trials = 10
 batch_size = 300
 num_batches = None  # unused for now
 

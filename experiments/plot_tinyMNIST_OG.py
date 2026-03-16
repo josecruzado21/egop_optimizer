@@ -60,14 +60,15 @@ def collect_solver_data(solver_name):
     return trials
 
 
-def compute_mean_and_band(trials, key):
-    """Given a list of trial dicts, compute mean and std for a metric key."""
+def compute_median_and_iqr(trials, key):
+    """Given a list of trial dicts, compute median and IQR for a metric key."""
     min_len = min(len(t[key]) for t in trials)
     matrix = np.stack([t[key][:min_len] for t in trials], axis=0)
-    mean = matrix.mean(axis=0)
-    std = matrix.std(axis=0)
+    median = np.median(matrix, axis=0)
+    q25 = np.percentile(matrix, 25, axis=0)
+    q75 = np.percentile(matrix, 75, axis=0)
     epochs = trials[0]["epoch"][:min_len]
-    return epochs, mean, std
+    return epochs, median, q25, q75
 
 
 def plot_training_loss(log_dir=None, save_path=None):
@@ -82,11 +83,12 @@ def plot_training_loss(log_dir=None, save_path=None):
         trials = collect_solver_data(solver_name)
         if not trials:
             continue
-        epochs, mean, std = compute_mean_and_band(trials, "train_loss")
-        ax.plot(epochs, mean, color=style["color"], label=style["label"], linewidth=1.5)
-        ax.fill_between(epochs, mean - std, mean + std, color=style["color"], alpha=0.15)
+        epochs, median, q25, q75 = compute_median_and_iqr(trials, "train_loss")
+        ax.plot(epochs, median, color=style["color"], label=style["label"], linewidth=1.5)
+        ax.fill_between(epochs, q25, q75, color=style["color"], alpha=0.15)
 
     ax.set_yscale("log")
+    ax.set_ylim(bottom=1e-5)
     ax.set_xlabel("Epochs")
     ax.set_ylabel("Training Loss")
     ax.legend()
@@ -113,9 +115,9 @@ def plot_validation_accuracy(log_dir=None, save_path=None):
         trials = collect_solver_data(solver_name)
         if not trials:
             continue
-        epochs, mean, std = compute_mean_and_band(trials, "val_acc")
-        ax.plot(epochs, mean, color=style["color"], label=style["label"], linewidth=1.5)
-        ax.fill_between(epochs, mean - std, mean + std, color=style["color"], alpha=0.15)
+        epochs, median, q25, q75 = compute_median_and_iqr(trials, "val_acc")
+        ax.plot(epochs, median, color=style["color"], label=style["label"], linewidth=1.5)
+        ax.fill_between(epochs, q25, q75, color=style["color"], alpha=0.15)
 
     ax.set_xlabel("Epochs")
     ax.set_ylabel("Validation Accuracy")
@@ -133,4 +135,3 @@ def plot_validation_accuracy(log_dir=None, save_path=None):
 
 if __name__ == "__main__":
     plot_training_loss()
-    plot_validation_accuracy()
