@@ -1,7 +1,8 @@
 import torch
 from pathlib import Path
 
-from egop_optimizer.engine.train import basic_train_loop
+# from egop_optimizer.engine.train import basic_train_loop
+from egop_optimizer.engine.train_old_repo import basic_train_loop
 from egop_optimizer.models.FashionMNISTClassfier import FashionMNISTClassifier
 from egop_optimizer.dataloaders.fashionMNIST_dataloader import fashionMNIST_dataloader
 
@@ -18,10 +19,6 @@ if __name__ == "__main__":
     num_runs = 10
 
     for seed in range(num_runs) :
-        print(f"\n{'='*50}")
-        seed = seed+42
-        print(f"Run {seed + 1}/{num_runs} (seed={seed})")
-        print(f"{'='*50}\n")
 
         model = FashionMNISTClassifier(
             pool_factor=pool_factor,
@@ -34,6 +31,7 @@ if __name__ == "__main__":
             batch_size=batch_size,
             num_classes=num_classes,
             dev_split=0.25,
+            num_workers=2,
         )
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -48,6 +46,6 @@ if __name__ == "__main__":
             LR_scheduler=None,
             valloader=valloader,
             testloader=testloader,
-            experiment_name=f"fashionMNIST_OG_seed{seed}",
+            experiment_name=f"fashionMNIST_OG/AdamW/LR_{lr}/trial_{seed}",
             report_validation_metrics=True,
         )

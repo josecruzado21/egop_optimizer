@@ -4,7 +4,6 @@ Plots a 2x2 grid with median + IQR shading for both repos.
 """
 
 import re
-import os
 from pathlib import Path
 
 import numpy as np
@@ -14,19 +13,24 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
-def parse_training_log(log_path: str) -> dict:
-    """Parse a training.log file into a history dict."""
+LOG_DIR = Path(__file__).resolve().parent / "logs" / "fashionMNIST_OG"
+PLOT_DIR = Path(__file__).resolve().parent / "plots"
+
+METRIC_RE = re.compile(
+    r"Epoch \d+: Training Loss = ([\d.]+), Validation Loss = ([\d.]+), "
+    r"Training Acc\. = ([\d.]+), Validation Acc\. = ([\d.]+)"
+)
+
+
+def parse_training_log(log_path):
+    """Parse a single training.log into a history dict."""
     history = {
-        'train_loss': [], 'train_acc': [],
-        'val_loss': [], 'val_acc': [],
+        'train_loss': [], 'val_loss': [],
+        'train_acc': [], 'val_acc': [],
     }
-    pattern = (
-        r"Epoch \d+: Training Loss = ([\d.]+), Validation Loss = ([\d.]+), "
-        r"Training Acc\. = ([\d.]+), Validation Acc\. = ([\d.]+)"
-    )
     with open(log_path, 'r') as f:
         for line in f:
-            m = re.search(pattern, line)
+            m = METRIC_RE.search(line)
             if m:
                 history['train_loss'].append(float(m.group(1)))
                 history['val_loss'].append(float(m.group(2)))
@@ -35,21 +39,28 @@ def parse_training_log(log_path: str) -> dict:
     return history
 
 
-def load_new_repo_histories(logs_dir: str, prefix: str = "fashionMNIST_OG_seed") -> list:
-    """Load all fashionMNIST_OG_seed* logs from new repo."""
+def collect_new_repo_histories(solver_name="AdamW"):
+    """Collect all trial histories for a solver from new repo logs.
+    Expects structure: logs/fashionMNIST_OG/{solver}/LR_{lr}/trial_{i}/training.log
+    """
+    solver_dir = LOG_DIR / solver_name
+    if not solver_dir.exists():
+        return []
     histories = []
-    log_dirs = sorted(Path(logs_dir).glob(f"{prefix}*"))
-    for d in log_dirs:
-        log_file = d / "training.log"
-        if log_file.exists():
-            h = parse_training_log(str(log_file))
-            if h['train_loss']:
-                histories.append(h)
-    print(f"Loaded {len(histories)} runs from new repo logs")
+    for lr_dir in sorted(solver_dir.iterdir()):
+        if not lr_dir.is_dir():
+            continue
+        for trial_dir in sorted(lr_dir.iterdir()):
+            log_path = trial_dir / "training.log"
+            if log_path.exists():
+                h = parse_training_log(str(log_path))
+                if h['train_loss']:
+                    histories.append(h)
+    print(f"Loaded {len(histories)} runs from new repo logs ({solver_name})")
     return histories
 
 
-def load_old_repo_histories(csv_path: str) -> list:
+def load_old_repo_histories(csv_path):
     """Load old repo CSV into list of history dicts (one per seed)."""
     df = pd.read_csv(csv_path)
     histories = []
@@ -65,8 +76,8 @@ def load_old_repo_histories(csv_path: str) -> list:
     return histories
 
 
-def plot_comparison(old_histories: list, new_histories: list, save_path: str):
-    """Plot 2x2 comparison grid: old repo vs new repo."""
+def plot_comparison(old_histories, new_histories, save_path):
+    """Plot 2x2 comparison grid: old repo vs new repo with median + IQR."""
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     num_epochs_old = len(old_histories[0]['train_loss'])
@@ -119,15 +130,10 @@ def plot_comparison(old_histories: list, new_histories: list, save_path: str):
 
 
 if __name__ == "__main__":
-    # Paths
-    new_logs_dir = Path(__file__).resolve().parent / "logs"
     old_csv_path = Path(r"E:\Explore\Project\Fast Adaptive\egop_optimization\experiments\results\fashionMNIST_og_only\fashionMNIST_og_only_20260315_180204.csv")
 
-    # Load data
     old_histories = load_old_repo_histories(str(old_csv_path))
-    new_histories = load_new_repo_histories(str(new_logs_dir))
+    new_histories = collect_new_repo_histories("AdamW")
 
-    # Plot
-    save_dir = Path(__file__).resolve().parent / "plots"
-    save_dir.mkdir(exist_ok=True)
-    plot_comparison(old_histories, new_histories, str(save_dir / "fashionMNIST_OG_comparison.png"))
+    PLOT_DIR.mkdir(exist_ok=True)
+    plot_comparison(old_histories, new_histories, str(PLOT_DIR / "fashionMNIST_OG_comparison.png"))
