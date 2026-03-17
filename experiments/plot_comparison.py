@@ -130,7 +130,7 @@ def plot_comparison(old_histories, new_histories, save_path):
 
 
 if __name__ == "__main__":
-    old_csv_path = Path(r"E:\Explore\Project\Fast Adaptive\egop_optimization\experiments\results\fashionMNIST_og_only\fashionMNIST_og_only_20260315_180204.csv")
+    old_csv_path = Path(r"E:\Explore\Project\Fast Adaptive\egop_optimization\experiments\results\fashionMNIST_og_only\fashionMNIST_og_only_20260316_184523.csv")
 
     old_histories = load_old_repo_histories(str(old_csv_path))
     new_histories = collect_new_repo_histories("AdamW")

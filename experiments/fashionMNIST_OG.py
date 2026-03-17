@@ -1,8 +1,7 @@
 import torch
 from pathlib import Path
 
-# from egop_optimizer.engine.train import basic_train_loop
-from egop_optimizer.engine.train_old_repo import basic_train_loop
+from egop_optimizer.engine.train import basic_train_loop
 from egop_optimizer.models.FashionMNISTClassfier import FashionMNISTClassifier
 from egop_optimizer.dataloaders.fashionMNIST_dataloader import fashionMNIST_dataloader
 
@@ -18,21 +17,24 @@ if __name__ == "__main__":
     weight_decay = 0.1
     num_runs = 10
 
+    trainloader, valloader, testloader = fashionMNIST_dataloader(
+            batch_size=batch_size,
+            num_classes=num_classes,
+            dev_split=0.25,
+            num_workers=0,
+        )
+    
     for seed in range(num_runs) :
 
         model = FashionMNISTClassifier(
             pool_factor=pool_factor,
             hidden_size=hidden_size,
             num_classes=num_classes,
-            weight_dist='gaussian'
+            weight_dist='gaussian',
+            seed = seed
         )
         model.reinitialize_seeded(seed)
-        trainloader, valloader, testloader = fashionMNIST_dataloader(
-            batch_size=batch_size,
-            num_classes=num_classes,
-            dev_split=0.25,
-            num_workers=2,
-        )
+
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         loss_method = lambda reduction: torch.nn.CrossEntropyLoss(reduction=reduction)
