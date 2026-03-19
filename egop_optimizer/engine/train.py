@@ -202,7 +202,7 @@ def basic_train_loop(
         with torch.no_grad():
             total_train_loss = 0.0
             total_train, correct_train = 0, 0
-            for batch_data, batch_labels in trainloader:
+            for batch_data, batch_labels in tqdm(trainloader, leave=False):
                 batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
                 output = model(batch_data)
                 total_train_loss += sum_loss_fn(output, batch_labels).item()
