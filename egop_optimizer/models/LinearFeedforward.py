@@ -5,7 +5,8 @@ import numpy as np
 
 import pdb
 
-from egop_optimizer.models.BaseClassifier import BaseClassifier
+from egop_optimizer.models.BaseClassifier import BaseClassifier, ReparamBaseClassifier
+from egop_optimizer.models.reparam_layers.reparam_layers import EGOP_linear_layer
 
 
 class LinearFeedforward(BaseClassifier):
@@ -87,6 +88,57 @@ class LinearFeedforward(BaseClassifier):
                 view = torch.view_as_real(view).view(-1)
             views.append(view)
         return torch.cat(views, 0)
+
+
+class ReparamLinearFeedforward(ReparamBaseClassifier):
+    def __init__(
+        self,
+        V_by_layer_dict,
+        input_size,
+        hidden_sizes,
+        output_size,
+        bias=False,
+        seed=None,
+    ):
+        # Experiments with linear networks used xavier initialization rather than pytorch's default
+        # reset_parameters() for linear layers (uniform(-1/sqrt(in_features), 1/sqrt(in_features))).
+        super().__init__(
+            V_by_layer_dict=V_by_layer_dict, weight_dist="xavier_normal", seed=seed
+        )
+        self.fc1 = EGOP_linear_layer(
+            V=V_by_layer_dict["fc1"],
+            in_features=input_size,
+            out_features=hidden_sizes[0],
+            bias=bias,
+            use_approximately_orthogonal_matrix=False,
+        )
+        self.fc2 = EGOP_linear_layer(
+            V=V_by_layer_dict["fc2"],
+            in_features=hidden_sizes[0],
+            out_features=hidden_sizes[1],
+            bias=bias,
+            use_approximately_orthogonal_matrix=False,
+        )
+        self.fc3 = EGOP_linear_layer(
+            V=V_by_layer_dict["fc3"],
+            in_features=hidden_sizes[1],
+            out_features=output_size,
+            bias=bias,
+            use_approximately_orthogonal_matrix=False,
+        )
+        self.num_params = get_num_params(
+            matrix_dim_list=get_matrix_dim_list(
+                input_size=input_size,
+                output_size=output_size,
+                hidden_sizes=hidden_sizes,
+            )
+        )
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+        return x
 
 
 """
