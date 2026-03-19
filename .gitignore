@@ -1,4 +1,5 @@
 logs/
+plots/
 notebooks/
 tests/outputs/*
 experiments/checkpoints/*
