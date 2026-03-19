@@ -74,6 +74,7 @@ def compute_k_gradients_all_layers(
         }
         del current_state_dict
     # Max number of out channels in the network
+    # TODO: What's the correct way to set k if we have both conv/res blocks AND linear layers?
     min_out_channels = float("inf")
     for name, module in model_OG.named_modules():
         if isinstance(module, nn.Conv2d):
