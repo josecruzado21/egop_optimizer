@@ -4,6 +4,12 @@ import torch.nn.functional as F
 from torch.nn.modules.utils import _pair
 import numpy as np
 
+from typing import Optional, Union
+
+from egop_optimizer.utils.device_utils import get_available_device
+
+DEVICE = get_available_device()
+
 
 class Conv2d_reparam(nn.Conv2d):
     def __init__(
@@ -167,6 +173,7 @@ class EGOP_linear_layer(torch.nn.Module):
         bias: bool = False,
         use_approximately_orthogonal_matrix: bool = True,
         device=DEVICE,
+        verbose=False,
     ):
         """
         Input matrix V should be a square matrix of side length dim_1 * dim_2, the eigenbasis for the layer
@@ -195,9 +202,10 @@ class EGOP_linear_layer(torch.nn.Module):
                 "Linear layers: Unsupported format for reparameterization matrix."
             )
         self.V = V
-        print(
-            f"V matrix of OG: {V.shape} | {V.numel():,} elements | {V.numel() * V.element_size() / 1024 / 1024:.2f} MB"
-        )
+        if verbose:
+            print(
+                f"V matrix of OG: {V.shape} | {V.numel():,} elements | {V.numel() * V.element_size() / 1024 / 1024:.2f} MB"
+            )
         if V_inv is None:
             V_inv = V.T
         if type(V_inv) == np.ndarray:
