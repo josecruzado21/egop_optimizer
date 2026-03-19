@@ -5,8 +5,22 @@ from torch.nn.init import _calculate_fan_in_and_fan_out
 from typing import Optional, Union, Tuple
 import math
 
+
+from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_linear_layer,
+    Conv2d_reparam,
+    ResBlock,
+)
+
+REPARAM_LAYER_CLASSES = [EGOP_linear_layer, Conv2d_reparam, ResBlock]
+
 """
-TODO:
+TODO with ReparamBaseClassifier:
+-
+"""
+
+"""
+TODO with BaseClassifier:
 X Unify logic for initializing random parameters
 X Reinitialize and reinitialize_seeded(accepts explicit random seed)
 
@@ -79,19 +93,25 @@ class BaseClassifier(nn.Module):
                 if self.weight_dist == "gaussian":
                     # Gaussian IID initialization
                     with torch.no_grad():
-                        layer.weight.normal_(mean=mean, std=sampling_scale, generator=self._gen)
+                        layer.weight.normal_(
+                            mean=mean, std=sampling_scale, generator=self._gen
+                        )
                 elif self.weight_dist == "xavier_normal" and isinstance(
                     layer, torch.nn.modules.linear.Linear
                 ):
                     centered_xavier_normal_(
-                        layer.weight, mean=torch.zeros_like(layer.weight), generator=self._gen
+                        layer.weight,
+                        mean=torch.zeros_like(layer.weight),
+                        generator=self._gen,
                     )
                 elif self.weight_dist == "kaiming_normal":
                     with torch.random.fork_rng(enabled=True):
                         torch.set_rng_state(self._gen.get_state())
-                        if hasattr(layer, 'weight') and layer.weight is not None:
-                            nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
-                        if hasattr(layer, 'bias') and layer.bias is not None:
+                        if hasattr(layer, "weight") and layer.weight is not None:
+                            nn.init.kaiming_normal_(
+                                layer.weight, mode="fan_in", nonlinearity="relu"
+                            )
+                        if hasattr(layer, "bias") and layer.bias is not None:
                             nn.init.constant_(layer.bias, 0)
                         self._gen.set_state(torch.get_rng_state())
                 else:
@@ -103,7 +123,18 @@ class BaseClassifier(nn.Module):
                         self._gen.set_state(torch.get_rng_state())
 
 
+class ReparamBaseClassifier(BaseClassifier):
+    def __init__(self, V_by_layer_dict, **kwargs):
+        super().__init__(**kwargs)
+        self.V_by_layer_dict = V_by_layer_dict
 
+    def move_bases_to_device(self, device):
+        for idx in self.V_by_layer_dict.keys():
+            self.V_by_layer_dict[idx] = self.V_by_layer_dict[idx].to(device)
+        for _, module in self.named_modules():
+            if type(module) == EGOP_linear_layer:
+                module.V = module.V.to(device)
+        return
 
 
 def centered_xavier_normal_(
