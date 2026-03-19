@@ -169,7 +169,7 @@ def basic_train_loop(
     info_logger.info(f"Scheduler: {LR_scheduler}")
     info_logger.info(f"Device: {device}")
 
-    start_epoch = 0
+    start_epoch = 1
     train_losses = []
     train_accuracies = []
     train_times = []
@@ -195,7 +195,7 @@ def basic_train_loop(
     if LR_scheduler is not None:
         training_logger.error("Scheduler not yet supported.")
         raise Exception("Scheduler not yet supported.")
-    
+    print("INITIAL METRICCCC", initial_metrics)
     # --- Initial metrics reporting ---
     if initial_metrics:
         model.train()
