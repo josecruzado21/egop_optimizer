@@ -136,13 +136,13 @@ class TestTinyMNISTReparam:
     def test_initialization(self):
         OG_model = TinyMNISTClassifier()
         V_dict = get_V_dict_for_TinyMNIST(OG_model=OG_model, use_randomized_svd=False)
-        reparam_model = ReparamLinearFeedforward(V_by_layer_dict=V_dict)
+        reparam_model = ReparamTinyMNISTClassifier(V_by_layer_dict=V_dict)
         return
 
     def test_model_eval(self, batch_size=128):
         OG_model = TinyMNISTClassifier()
         V_dict = get_V_dict_for_TinyMNIST(OG_model=OG_model, use_randomized_svd=False)
-        reparam_model = ReparamLinearFeedforward(V_by_layer_dict=V_dict)
+        reparam_model = ReparamTinyMNISTClassifier(V_by_layer_dict=V_dict)
 
         trainloader, _, _ = tinyMNIST_dataloader(batch_size=128)
         train_iterator = iter(trainloader)
