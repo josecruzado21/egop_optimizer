@@ -130,11 +130,11 @@ def basic_train_loop(
         None
     """
     log_dir = f"logs/{experiment_name}"
-    suffix = 0
-    while os.path.exists(log_dir):
-        suffix += 1
-        log_dir = f"logs/{experiment_name}_cont{suffix}"
-    os.makedirs(log_dir)
+    # suffix = 0
+    # while os.path.exists(log_dir):
+    #     suffix += 1
+    #     log_dir = f"logs/{experiment_name}"
+    os.makedirs(log_dir, exist_ok=True)
     if checkpoint:
         ckpt_dir = os.path.join(log_dir, "checkpoints")
         os.makedirs(ckpt_dir, exist_ok=True)

@@ -8,6 +8,7 @@ from egop_optimizer.dataloaders.ImageNet_dataloader import ImageNet_dataloader
 
 if __name__ == "__main__":
     model = ImageNet_model_34_layer_residual()
+    model.reinitialize_seeded(seed=0)
     ten_crop = True
     # ImageNet dataset path (cluster)
     data_dir = Path("/share/data/vdata/imagenet1k")
