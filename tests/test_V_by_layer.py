@@ -17,6 +17,11 @@ TODO'S:
 -test CNN when reparameterizing linear layers
 -test shapes when using randomized SVD
 -test shapes when using n_components
+-replicability:
+    - do we have explicit seed control/can we get identical results when we re-run compute_V, or not?
+-functionality: modification to EGOP_utils.py
+    - Add option to pass EGOP_oversampling_factor instead of explicit value for k
+    num_EGOP_samples = int(EGOP_oversampling_factor * count_params(model))
 """
 
 
