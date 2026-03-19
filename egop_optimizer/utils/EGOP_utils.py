@@ -138,11 +138,16 @@ def compute_k_gradients_all_layers(
     return gradients_dict
 
 
+def count_params(model):
+    """Returns the total number of parameters in the model."""
+    return sum(p.numel() for p in model.parameters())
+
+
 def compute_V_by_layer(
     model_OG,
-    k,
-    data_loader,
-    criterion,
+    k=None,
+    data_loader=None,
+    criterion=None,
     device=DEVICE,
     reparam_linear_layers=True,
     use_randomized_svd=False,
@@ -150,7 +155,12 @@ def compute_V_by_layer(
     recalculate_V=False,
     current_model=None,
     per_layer=False,
+    EGOP_oversampling_factor=None,
 ):
+    if k is None and EGOP_oversampling_factor is not None:
+        k = int(EGOP_oversampling_factor * count_params(model_OG))
+    elif k is None:
+        raise ValueError("Must provide either k or EGOP_oversampling_factor.")
     if per_layer:
         raise Exception("Option per_layer not yet supported.")
     else:
