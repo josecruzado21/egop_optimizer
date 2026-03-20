@@ -195,10 +195,12 @@ def basic_train_loop(
     if LR_scheduler is not None:
         training_logger.error("Scheduler not yet supported.")
         raise Exception("Scheduler not yet supported.")
-    print("INITIAL METRICCCC", initial_metrics)
     # --- Initial metrics reporting ---
     if initial_metrics:
-        model.train()
+        if start_epoch == 1:
+            model.train()
+        else:
+            model.eval()
         with torch.no_grad():
             total_train_loss = 0.0
             total_train, correct_train = 0, 0
@@ -213,14 +215,14 @@ def basic_train_loop(
         initial_train_acc = correct_train / total_train if total_train > 0 else 0
 
         training_logger.info(
-            f"Initial Training Loss = {initial_train_loss:.2f}, Initial Training Acc. = {initial_train_acc:.4f}"
+            f"\nInitial Training Loss = {initial_train_loss:.2f}, Initial Training Acc. = {initial_train_acc:.4f}"
         )
 
         # Compute initial validation metrics if valloader is provided
         if valloader is not None:
             initial_val_loss, initial_val_acc = compute_validation_loss(model, sum_loss_fn, valloader, device, ten_crop)
             training_logger.info(
-                f"Initial Validation Loss = {initial_val_loss:.2f}, Initial Validation Acc. = {initial_val_acc:.4f}"
+                f"Initial Validation Loss = {initial_val_loss:.2f}, Initial Validation Acc. = {initial_val_acc:.4f}\n"
             )
 
     for t in range(start_epoch, epochs + 1):
