@@ -11,9 +11,9 @@ DEVICE = get_available_device()
 
 if __name__ == "__main__":
     model = CIFAR10_model_34_layer_residual()
+    model.reinitialize_seeded(seed=0)
     model = model.to(DEVICE)
     data_dir = "/Users/jose_cruzado/Documents/Personal/Code/egop_optimizer/data"
-    model.reinitialize_seeded(seed=0)
     trainloader, valloader, testloader = CIFAR10_dataloader(batch_size=256, data_dir=data_dir)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
