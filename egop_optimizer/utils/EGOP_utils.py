@@ -5,9 +5,24 @@ import torch.nn as nn
 import time
 import math
 
+from typing import Optional, Union, Tuple
+
 from egop_optimizer.utils.device_utils import get_available_device
+from egop_optimizer.models.reparam_layers.reparam_layers import EGOP_linear_layer
+
 
 import pdb
+
+# List of implemented EGOP layer classes
+# Needs to be a tuple for isinstance to work
+EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer])
+
+"""
+TODO: 
+- CNN logic
+- auxilliary logic
+"""
+
 
 DEVICE = get_available_device()
 
@@ -200,3 +215,96 @@ def compute_V_by_layer(
         )
         print()
         return V_dict
+
+
+def layerwise_reparam_init_equiv(
+    EGOP_model: torch.nn.Module,
+    OG_model: torch.nn.Module,
+    seed: int = None,
+) -> Tuple[torch.nn.Module, torch.nn.Module]:
+
+    # If we don't recieve a seed, we'll initialize OG model randomly.
+    if seed is None:
+        print("Initializing OG model randomly without set seed.")
+        OG_model.reinitialize()
+    else:
+        OG_model.reinitialize_seeded(seed=seed)
+
+    # Check that EGOP_model and OG_model have the same list of named_modules.
+    # If they do not, this function will raise an exception.
+    check_model_structure(EGOP_model, OG_model)
+
+    # Create new state_dict for EGOP model
+    EGOP_init_state_dict = {}
+
+    # Initialize using layer-by-layer V
+    for name, module in EGOP_model.named_modules():
+        # If reparameterizable layer type,
+        if type(module) in [
+            torch.nn.modules.conv.Conv2d,
+            torch.nn.modules.linear.Linear,
+        ] or isinstance(module, EGOP_LAYER_CLASSES):
+            """
+            Why was I also considering conv2d/linear layers? E.g. to copy the weights directly if we had layers without reparameterization.
+
+            Should we make this ^ more general? E.g. copy reslayers directly etc? Why bother running the above check at all? Maybe
+            we should just switch to checking for weights.
+            """
+            pdb.set_trace()
+            # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
+            W = OG_model.get_submodule(name).weight.clone()
+            # If reparameterized layer, copy and transform
+            if isinstance(module, EGOP_LAYER_CLASSES):
+                """
+                Should check that this correctly detects EGOP layers
+                """
+                pdb.set_trace()
+                if isinstance(module, EGOP_linear_layer):
+                    """
+                    Currently only have EGOP_linear_layer reparameterization implemented.
+                    """
+                    pdb.set_trace()
+                    V_inv = module.V_inv
+                    #  If c = V.T x, then f(x) = tilde(f)(c) for reparam tilde(f)(c)= Vc
+                    W_prime = torch.reshape(
+                        torch.matmul(V_inv, W.flatten()),
+                        shape=(
+                            module.out_features,
+                            module.in_features,
+                        ),
+                    )
+                    EGOP_init_state_dict[name + ".weight"] = W_prime
+                    """
+                    Check that this correctly formats layer names.
+                    """
+                else:
+                    raise Exception("Unsupported reparameterized layer type.")
+            # If not reparameterized, copy weight directly
+            else:
+                EGOP_init_state_dict[name + ".weight"] = W
+            # Bias is identical/not reparameterized.
+            if OG_model.get_submodule(name).bias is not None:
+                EGOP_init_state_dict[name + ".bias"] = OG_model.get_submodule(
+                    name
+                ).bias.clone()
+    # strict=True indicates we set ALL parameters using the provided state_dict
+    EGOP_model.load_state_dict(EGOP_init_state_dict, strict=True)
+    return OG_model, EGOP_model
+
+
+def check_model_structure(model_1, model_2):
+    """
+    Checks if module_1 and module_2 have compatible sets of named_modules and parameters.
+    If they do not, raises an exception.
+    """
+    names_1 = [n for n, _ in model_1.named_modules()]
+    names_2 = [n for n, _ in model_2.named_modules()]
+
+    # If the list of names is not identical, raise an error
+    if names_1 != names_2:
+        print("Module name mismatch:")
+        print("     model_1:", names_1)
+        print("     model_2:", names_2)
+        raise Exception("Provided models do not have equivalent sets of named modules.")
+    # Otherwise we're fine
+    return True
