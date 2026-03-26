@@ -197,6 +197,11 @@ def basic_train_loop(
         raise Exception("Scheduler not yet supported.")
     # --- Initial metrics reporting ---
     if initial_metrics:
+        # The reason why we have model.train() for the initial training metrics is to ensure that any 
+        # layers that behave differently during training (like dropout or batch normalization) are in 
+        # the correct mode when we compute the initial training loss and accuracy. 
+        # This way, we get a more accurate representation of the model's performance on the training 
+        # data before any updates are made.
         if start_epoch == 1:
             model.train()
         else:
