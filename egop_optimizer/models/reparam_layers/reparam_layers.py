@@ -141,7 +141,7 @@ def identity_downsample(x, out_channels, stride):
     return x
 
 
-class EGOP_linear_layer(torch.nn.Module):
+class EGOP_linear_layer(torch.nn.Linear):
     """
     A custom linear layer that reparameterizes the weight matrix in the EGOP eigenbasis.
 
@@ -179,18 +179,7 @@ class EGOP_linear_layer(torch.nn.Module):
         Input matrix V should be a square matrix of side length dim_1 * dim_2, the eigenbasis for the layer
         Columns of V should be eigenvectors.
         """
-        super().__init__()
-        # Pytorch applies weights W to input x as xW.T, hence W is out x in
-        # Matching shape conventions of torch.nn.Linear, weights are out x in
-        self.weight = torch.nn.parameter.Parameter(
-            torch.empty((out_features, in_features), device=device)
-        )
-        if bias:
-            self.bias = torch.nn.parameter.Parameter(
-                torch.empty(out_features, device=device)
-            )
-        else:
-            self.register_parameter("bias", None)
+        super().__init__(in_features, out_features, bias=bias, device=device)
 
         # V should be a (in_features*out_features) x (in_features*out_features) matrix
         if type(V) == np.ndarray:

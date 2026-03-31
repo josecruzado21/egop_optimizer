@@ -86,7 +86,10 @@ class BaseClassifier(nn.Module):
                 mean = 0.0
 
         for layer in self.modules():
-            if isinstance(layer, (nn.Conv2d, nn.Linear)):
+            if isinstance(layer, (nn.Conv2d, nn.Linear)): 
+                """
+                TODO: Consider changing the above if statement to check for weight parameters, not specific layer types.
+                """
                 if verbose:
                     print(f"Initializing layer with {self.weight_dist} distribution")
 
