@@ -8,14 +8,17 @@ import math
 from typing import Optional, Union, Tuple
 
 from egop_optimizer.utils.device_utils import get_available_device
-from egop_optimizer.models.reparam_layers.reparam_layers import EGOP_linear_layer
+from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_linear_layer,
+    EGOP_auxiliary_variables_linear_layer,
+)
 
 
 import pdb
 
 # List of implemented EGOP layer classes
 # Needs to be a tuple for isinstance to work
-EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer])
+EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer, EGOP_auxiliary_variables_linear_layer])
 
 """
 TODO: 
@@ -222,8 +225,15 @@ def layerwise_reparam_init_equiv(
     OG_model: torch.nn.Module,
     seed: int = None,
 ) -> Tuple[torch.nn.Module, torch.nn.Module]:
+    """
+    Initializes a reparameterized (EGOP) model to be functionally equivalent to an original (OG) model.
 
-    # If we don't recieve a seed, we'll initialize OG model randomly.
+    Samples weights for the original model, then transforms and assigns those weights
+    to each EGOP layer using the stored eigenbasis V. Non-reparameterized layers are copied directly.
+
+    Supports: EGOP_linear_layer (full square V), EGOP_auxiliary_variables_linear_layer (d x r with auxiliary vars).
+    """
+    # If we don't receive a seed, we'll initialize OG model randomly.
     if seed is None:
         print("Initializing OG model randomly without set seed.")
         OG_model.reinitialize()
@@ -231,7 +241,6 @@ def layerwise_reparam_init_equiv(
         OG_model.reinitialize_seeded(seed=seed)
 
     # Check that EGOP_model and OG_model have the same list of named_modules.
-    # If they do not, this function will raise an exception.
     check_model_structure(EGOP_model, OG_model)
 
     # Create new state_dict for EGOP model
@@ -239,31 +248,15 @@ def layerwise_reparam_init_equiv(
 
     # Initialize using layer-by-layer V
     for name, module in EGOP_model.named_modules():
-        # If reparameterizable layer type,
         if type(module) in [
             torch.nn.modules.conv.Conv2d,
             torch.nn.modules.linear.Linear,
         ] or isinstance(module, EGOP_LAYER_CLASSES):
-            """
-            Why was I also considering conv2d/linear layers? E.g. to copy the weights directly if we had layers without reparameterization.
-
-            Should we make this ^ more general? E.g. copy reslayers directly etc? Why bother running the above check at all? Maybe
-            we should just switch to checking for weights.
-            """
-            pdb.set_trace()
-            # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
+            # Get a copy of the parameter tensor in original coordinates
             W = OG_model.get_submodule(name).weight.clone()
             # If reparameterized layer, copy and transform
             if isinstance(module, EGOP_LAYER_CLASSES):
-                """
-                Should check that this correctly detects EGOP layers
-                """
-                pdb.set_trace()
                 if isinstance(module, EGOP_linear_layer):
-                    """
-                    Currently only have EGOP_linear_layer reparameterization implemented.
-                    """
-                    pdb.set_trace()
                     V_inv = module.V_inv
                     #  If c = V.T x, then f(x) = tilde(f)(c) for reparam tilde(f)(c)= Vc
                     W_prime = torch.reshape(
@@ -274,9 +267,22 @@ def layerwise_reparam_init_equiv(
                         ),
                     )
                     EGOP_init_state_dict[name + ".weight"] = W_prime
-                    """
-                    Check that this correctly formats layer names.
-                    """
+
+                elif isinstance(module, EGOP_auxiliary_variables_linear_layer):
+                    # Auxiliary variables initialization:
+                    # theta_r = V^T @ theta_0
+                    # theta_d = (I - V @ V^T) @ theta_0
+                    # This ensures V @ theta_r + (I - V @ V^T) @ theta_d = theta_0
+                    V = module.V
+                    W_flat = W.flatten().to(V.device)
+
+                    theta_r = torch.matmul(V.T, W_flat)
+                    VVT_W = torch.matmul(V, torch.matmul(V.T, W_flat))
+                    theta_d = W_flat - VVT_W
+
+                    EGOP_init_state_dict[name + ".weight_r"] = theta_r
+                    EGOP_init_state_dict[name + ".weight_d"] = theta_d
+
                 else:
                     raise Exception("Unsupported reparameterized layer type.")
             # If not reparameterized, copy weight directly

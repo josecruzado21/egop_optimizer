@@ -8,11 +8,12 @@ import math
 
 from egop_optimizer.models.reparam_layers.reparam_layers import (
     EGOP_linear_layer,
+    EGOP_auxiliary_variables_linear_layer,
     Conv2d_reparam,
     ResBlock,
 )
 
-REPARAM_LAYER_CLASSES = [EGOP_linear_layer, Conv2d_reparam, ResBlock]
+REPARAM_LAYER_CLASSES = [EGOP_linear_layer, EGOP_auxiliary_variables_linear_layer, Conv2d_reparam, ResBlock]
 
 """
 TODO with ReparamBaseClassifier:

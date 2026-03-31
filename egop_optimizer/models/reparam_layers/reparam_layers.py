@@ -141,6 +141,18 @@ def identity_downsample(x, out_channels, stride):
     return x
 
 
+def _convert_V_to_tensor(V, device):
+    """Convert V matrix from numpy or tensor to a float tensor on the given device."""
+    if type(V) == np.ndarray:
+        return torch.from_numpy(V).type(torch.FloatTensor).to(device)
+    elif type(V) == torch.Tensor:
+        return V.to(device)
+    else:
+        raise Exception(
+            "Unsupported format for reparameterization matrix. Expected np.ndarray or torch.Tensor."
+        )
+
+
 class EGOP_linear_layer(torch.nn.Module):
     """
     A custom linear layer that reparameterizes the weight matrix in the EGOP eigenbasis.
@@ -248,6 +260,93 @@ class EGOP_linear_layer(torch.nn.Module):
         """
         W_prime = torch.reshape(
             torch.matmul(self.V, self.weight.flatten()),
+            shape=(self.out_features, self.in_features),
+        )
+        return F.linear(input, W_prime, bias=self.bias)
+
+
+class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
+    """
+    A custom linear layer that reparameterizes the weight matrix in the EGOP eigenbasis
+    using auxiliary variables.
+
+    This layer uses V of size d x r, but does NOT restrict the optimizer to working in a
+    reduced space because it introduces auxiliary variables that live in range(V^perp),
+    the orthogonal complement to range(V).
+
+    The forward pass computes:
+        W = weight_d + V @ (weight_r - V^T @ weight_d)
+
+    This is mathematically equivalent to:
+        W = V @ weight_r + (I - V @ V^T) @ weight_d
+
+    Args:
+        V (Union[np.ndarray, torch.Tensor]): A d x r matrix whose columns are
+            the eigenvectors for reparameterization.
+        in_features (int): Number of input features.
+        out_features (int): Number of output features.
+        bias (bool): If True, includes a learnable bias parameter.
+    """
+
+    def __init__(
+        self,
+        V: Union[np.ndarray, torch.Tensor],
+        in_features: int,
+        out_features: int,
+        bias: bool = False,
+        device=DEVICE,
+    ):
+        super().__init__()
+        self.d = in_features * out_features
+        self.r = V.shape[1]
+        if self.r >= self.d:
+            import warnings
+
+            warnings.warn(
+                "EGOP_auxiliary_variables_linear_layer created, but provided matrix is of shape d x r for r >= d."
+            )
+        # weight_r parameters are of dimension r, weight_d are of dimension d
+        self.weight_r = torch.nn.parameter.Parameter(
+            torch.empty((self.r), device=device)
+        )
+        self.weight_d = torch.nn.parameter.Parameter(
+            torch.empty((self.d), device=device)
+        )
+        if bias:
+            self.bias = torch.nn.parameter.Parameter(
+                torch.empty(out_features, device=device)
+            )
+        else:
+            self.register_parameter("bias", None)
+
+        self.V = _convert_V_to_tensor(V, device)
+
+        # Check that V has orthonormal columns
+        try:
+            assert torch.all(
+                torch.isclose(
+                    self.V.T @ self.V,
+                    torch.eye(self.r, device=device),
+                    atol=1e-5,
+                )
+            )
+        except:
+            raise Exception(
+                "Provided matrix V does not have orthonormal columns to specified tolerance."
+            )
+
+        self.in_features = in_features
+        self.out_features = out_features
+
+    def forward(self, input):
+        """
+        Compute W = weight_d + V @ (weight_r - V^T @ weight_d), then apply as linear layer.
+
+        This uses 2 matmul ops instead of 3 by leveraging:
+            V @ w_r + (I - V V^T) w_d = w_d + V @ (w_r - V^T w_d)
+        """
+        W_prime = torch.reshape(
+            self.weight_d + self.V @ (self.weight_r - self.V.T @ self.weight_d),
             shape=(self.out_features, self.in_features),
         )
         return F.linear(input, W_prime, bias=self.bias)
