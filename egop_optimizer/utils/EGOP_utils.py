@@ -239,18 +239,8 @@ def layerwise_reparam_init_equiv(
 
     # Initialize using layer-by-layer V
     for name, module in EGOP_model.named_modules():
-        # If reparameterizable layer type,
-        if type(module) in [
-            torch.nn.modules.conv.Conv2d,
-            torch.nn.modules.linear.Linear,
-        ] or isinstance(module, EGOP_LAYER_CLASSES):
-            """
-            Why was I also considering conv2d/linear layers? E.g. to copy the weights directly if we had layers without reparameterization.
-
-            Should we make this ^ more general? E.g. copy reslayers directly etc? Why bother running the above check at all? Maybe
-            we should just switch to checking for weights.
-            """
-            # pdb.set_trace()
+        # If layer has a weight parameter,
+        if hasattr(module, "weight") and module.weight is not None:
             # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
             W = OG_model.get_submodule(name).weight.clone()
             # If reparameterized layer, copy and transform
@@ -274,9 +264,6 @@ def layerwise_reparam_init_equiv(
                         ),
                     )
                     EGOP_init_state_dict[name + ".weight"] = W_prime
-                    """
-                    Check that this correctly formats layer names.
-                    """
                 else:
                     raise Exception("Unsupported reparameterized layer type.")
             # If not reparameterized, copy weight directly

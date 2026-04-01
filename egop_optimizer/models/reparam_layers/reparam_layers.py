@@ -251,3 +251,11 @@ class EGOP_linear_layer(torch.nn.Module):
             shape=(self.out_features, self.in_features),
         )
         return F.linear(input, W_prime, bias=self.bias)
+
+    def return_weight_copy_in_OG_coors(self):
+        # Detach and clone weights so that edits do not affect upstream weights
+        W_prime = torch.reshape(
+            torch.matmul(self.V, self.weight.detach().clone().flatten()),
+            shape=(self.out_features, self.in_features),
+        )
+        return W_prime
