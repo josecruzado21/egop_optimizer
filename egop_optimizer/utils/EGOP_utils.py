@@ -250,7 +250,7 @@ def layerwise_reparam_init_equiv(
             Should we make this ^ more general? E.g. copy reslayers directly etc? Why bother running the above check at all? Maybe
             we should just switch to checking for weights.
             """
-            pdb.set_trace()
+            # pdb.set_trace()
             # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
             W = OG_model.get_submodule(name).weight.clone()
             # If reparameterized layer, copy and transform
@@ -258,12 +258,12 @@ def layerwise_reparam_init_equiv(
                 """
                 Should check that this correctly detects EGOP layers
                 """
-                pdb.set_trace()
+                # pdb.set_trace()
                 if isinstance(module, EGOP_linear_layer):
                     """
                     Currently only have EGOP_linear_layer reparameterization implemented.
                     """
-                    pdb.set_trace()
+                    # pdb.set_trace()
                     V_inv = module.V_inv
                     #  If c = V.T x, then f(x) = tilde(f)(c) for reparam tilde(f)(c)= Vc
                     W_prime = torch.reshape(
