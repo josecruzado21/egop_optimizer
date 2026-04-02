@@ -208,6 +208,7 @@ class TestTinyMNISTReparam(SharedModelEquivalenceTester, unittest.TestCase):
         OG_model = TinyMNISTClassifier()
         V_dict = get_V_dict_for_TinyMNIST(OG_model=OG_model, use_randomized_svd=False)
         reparam_model = ReparamTinyMNISTClassifier(V_by_layer_dict=V_dict)
+
         # Before initializing equivalently, models should not be equivalent
         self.assert_models_NOT_equivalent(OG_model, reparam_model, verbose=False)
         OG_model, reparam_model = layerwise_reparam_init_equiv(

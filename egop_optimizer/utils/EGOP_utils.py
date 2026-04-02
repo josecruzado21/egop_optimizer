@@ -283,6 +283,8 @@ def check_model_structure(model_1, model_2):
     """
     Checks if module_1 and module_2 have compatible sets of named_modules and parameters.
     If they do not, raises an exception.
+
+    Order of modules matters in the recursive traversal.
     """
     names_1 = [n for n, _ in model_1.named_modules()]
     names_2 = [n for n, _ in model_2.named_modules()]
