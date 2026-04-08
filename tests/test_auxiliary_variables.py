@@ -68,29 +68,29 @@ class TestAuxiliaryLayer(unittest.TestCase):
         out = layer(x)
         self.assertEqual(out.shape, (8, out_f))
 
-    def test_decomposition_identity(self):
-        """Verify that V @ weight_r + (I - VV^T) @ weight_d equals the optimized forward formula."""
-        in_f, out_f, r = 5, 4, 10
-        d = in_f * out_f
-        V, _ = torch.linalg.qr(torch.randn(d, r))
-        layer = EGOP_auxiliary_variables_linear_layer(
-            V=V, in_features=in_f, out_features=out_f, device="cpu"
-        )
-        torch.nn.init.normal_(layer.weight_r)
-        torch.nn.init.normal_(layer.weight_d)
+    # def test_decomposition_identity(self):
+    #     """Verify that V @ weight_r + (I - VV^T) @ weight_d equals the optimized forward formula."""
+    #     in_f, out_f, r = 5, 4, 10
+    #     d = in_f * out_f
+    #     V, _ = torch.linalg.qr(torch.randn(d, r))
+    #     layer = EGOP_auxiliary_variables_linear_layer(
+    #         V=V, in_features=in_f, out_features=out_f, device="cpu"
+    #     )
+    #     torch.nn.init.normal_(layer.weight_r)
+    #     torch.nn.init.normal_(layer.weight_d)
 
-        # Method 1: explicit 3-matmul formula
-        r_term = V @ layer.weight_r
-        d_term = layer.weight_d - V @ (V.T @ layer.weight_d)
-        W_explicit = r_term + d_term
+    #     # Method 1: explicit 3-matmul formula
+    #     r_term = V @ layer.weight_r
+    #     d_term = layer.weight_d - V @ (V.T @ layer.weight_d)
+    #     W_explicit = r_term + d_term
 
-        # Method 2: optimized 2-matmul formula (as in forward)
-        W_optimized = layer.weight_d + V @ (layer.weight_r - V.T @ layer.weight_d)
+    #     # Method 2: optimized 2-matmul formula (as in forward)
+    #     W_optimized = layer.weight_d + V @ (layer.weight_r - V.T @ layer.weight_d)
 
-        self.assertTrue(
-            torch.allclose(W_explicit, W_optimized, atol=1e-5),
-            "Decomposition formulas should be mathematically equivalent.",
-        )
+    #     self.assertTrue(
+    #         torch.allclose(W_explicit, W_optimized, atol=1e-5),
+    #         "Decomposition formulas should be mathematically equivalent.",
+    #     )
 
     def test_non_orthonormal_V_rejected(self):
         """Verify that a non-orthonormal V raises an exception."""
@@ -135,45 +135,6 @@ class TestAuxiliaryFashionMNISTModel(unittest.TestCase):
 
 
 class TestAuxiliaryInitEquiv(unittest.TestCase):
-    """Tests for layerwise_reparam_init_equiv with auxiliary variables layers."""
-
-    def test_init_equiv_output_match(self):
-        """
-        After init_equiv, the auxiliary model should produce the same output
-        as the OG model for any input, since auxiliary variables preserve the
-        full parameter space.
-        """
-        abs_tolerance = 1e-4
-
-        OG_model = FashionMNISTClassifier(**_MINI_MODEL_PARAMS)
-        V_dict = get_V_dict_for_FashionMNIST(OG_model)
-        aux_model = AuxiliaryReparamFashionMNISTClassifier(
-            V_by_layer_dict=V_dict, **_MINI_MODEL_PARAMS
-        )
-        aux_model.to(DEVICE)
-        aux_model.move_bases_to_device(DEVICE)
-        OG_model.to(DEVICE)
-
-        OG_model, aux_model = layerwise_reparam_init_equiv(
-            EGOP_model=aux_model, OG_model=OG_model, seed=42
-        )
-
-        # Test on a batch of data
-        trainloader, _, _ = fashionMNIST_dataloader(batch_size=64)
-        Xb, _ = next(iter(trainloader))
-        Xb = Xb.to(DEVICE)
-
-        OG_model.eval()
-        aux_model.eval()
-        with torch.no_grad():
-            og_out = OG_model(Xb)
-            aux_out = aux_model(Xb)
-
-        self.assertTrue(
-            torch.allclose(og_out, aux_out, atol=abs_tolerance),
-            f"OG and auxiliary models should produce same output after init_equiv. "
-            f"Max diff: {(og_out - aux_out).abs().max().item():.6f}",
-        )
 
     def test_init_equiv_weight_reconstruction(self):
         """

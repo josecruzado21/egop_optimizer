@@ -76,6 +76,10 @@ class AuxiliaryReparamFashionMNISTClassifier(ReparamBaseClassifier):
         hidden_size (int): Number of hidden units in the first fully connected layer.
         num_classes (int): Number of output classes.
     """
+   
+### figure out how many r for each layer
+
+
 
     def __init__(
         self,

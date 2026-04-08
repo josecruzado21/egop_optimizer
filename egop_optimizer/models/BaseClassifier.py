@@ -133,7 +133,7 @@ class ReparamBaseClassifier(BaseClassifier):
         for idx in self.V_by_layer_dict.keys():
             self.V_by_layer_dict[idx] = self.V_by_layer_dict[idx].to(device)
         for _, module in self.named_modules():
-            if type(module) == EGOP_linear_layer:
+            if type(module) in (EGOP_linear_layer, EGOP_auxiliary_variables_linear_layer):
                 module.V = module.V.to(device)
         return
 
