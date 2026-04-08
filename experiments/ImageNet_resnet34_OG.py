@@ -4,10 +4,14 @@ from pathlib import Path
 from egop_optimizer.engine.train import basic_train_loop
 from egop_optimizer.models.ImagenetClassifier import ImageNet_model_34_layer_residual
 from egop_optimizer.dataloaders.ImageNet_dataloader import ImageNet_dataloader
+from egop_optimizer.utils.device_utils import get_available_device
+DEVICE = get_available_device()
 
 
 if __name__ == "__main__":
     model = ImageNet_model_34_layer_residual()
+    model.reinitialize_seeded(seed=0)
+    model = model.to(DEVICE)
     ten_crop = True
     # ImageNet dataset path (cluster)
     data_dir = Path("/share/data/vdata/imagenet1k")
