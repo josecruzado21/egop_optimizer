@@ -8,7 +8,10 @@ from egop_optimizer.models.TinyMNISTClassifier import (
     TinyMNISTClassifier,
     ReparamTinyMNISTClassifier,
 )
-from egop_optimizer.models.reparam_layers.reparam_layers import EGOP_linear_layer
+from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_linear_layer,
+    EGOP_conv2d_layer,
+)
 from egop_optimizer.dataloaders.tinyMNIST_dataloader import tinyMNIST_dataloader
 from egop_optimizer.utils.EGOP_utils import (
     compute_V_by_layer,
@@ -16,13 +19,17 @@ from egop_optimizer.utils.EGOP_utils import (
     check_model_structure,
 )
 from egop_optimizer.utils.device_utils import get_available_device
+from egop_optimizer.models.TinyConvClassifier import (
+    TinyConvClassifier,
+    ReparamTinyConvClassifier,
+)
 
 import pdb
 
 DEVICE = get_available_device()
 # List of implemented EGOP layer classes
 # Needs to be a tuple for isinstance to work
-EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer])
+EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer, EGOP_conv2d_layer])
 
 # Set generous absolute tolerance for checks with torch.isclose()
 ATOL_THRESHOLD = 1e-5
@@ -91,33 +98,43 @@ class SharedModelEquivalenceTester:
                         print(
                             f"Testing for EQUIVALENCE on modules of types: {type(module_1), type(module_2)}"
                         )
-                    # Get weights in original coordinates
+                    # Get weights in original coordinates (always compare on CPU)
                     if isinstance(module_1, EGOP_LAYER_CLASSES):
-                        module_1_W_OG_coors = module_1.return_weight_copy_in_OG_coors()
+                        module_1_W_OG_coors = module_1.return_weight_copy_in_OG_coors().cpu()
                     else:
-                        module_1_W_OG_coors = module_1.weight.detach().clone()
+                        module_1_W_OG_coors = module_1.weight.detach().clone().cpu()
                     if isinstance(module_2, EGOP_LAYER_CLASSES):
-                        module_2_W_OG_coors = module_2.return_weight_copy_in_OG_coors()
+                        module_2_W_OG_coors = module_2.return_weight_copy_in_OG_coors().cpu()
                     else:
-                        module_2_W_OG_coors = module_1.weight.detach().clone()
+                        module_2_W_OG_coors = module_2.weight.detach().clone().cpu()
 
                     # Check if weights and biases are equal up to floating point error
+                    breakpoint()
                     self.assertTrue(
                         torch.allclose(
                             module_1_W_OG_coors,
                             module_2_W_OG_coors,
                             atol=ATOL_THRESHOLD,
                         ),
-                        f"Weights not equivalent for for modules of name {name} (atol={ATOL_THRESHOLD}).",
+                        f"Weights not equivalent for modules of name {name} (atol={ATOL_THRESHOLD}).",
                     )
-                    self.assertTrue(
-                        torch.allclose(
-                            module_1.bias.detach().clone(),
-                            module_2.bias.detach().clone(),
-                            atol=ATOL_THRESHOLD,
-                        ),
-                        f"Biases not equivalent for modules of name {name} (atol={ATOL_THRESHOLD}).",
-                    )
+                    bias_1 = module_1.bias
+                    bias_2 = module_2.bias
+                    if bias_1 is None and bias_2 is None:
+                        pass
+                    elif bias_1 is not None and bias_2 is not None:
+                        self.assertTrue(
+                            torch.allclose(
+                                bias_1.detach().clone().cpu(),
+                                bias_2.detach().clone().cpu(),
+                                atol=ATOL_THRESHOLD,
+                            ),
+                            f"Biases not equivalent for modules of name {name} (atol={ATOL_THRESHOLD}).",
+                        )
+                    else:
+                        self.fail(
+                            f"Bias mismatch for module {name}: one is None, the other is not."
+                        )
 
                 # If not an EGOP layer, check that modules are identical
                 else:
@@ -159,7 +176,7 @@ class SharedModelEquivalenceTester:
 
         for k in state_dict_1:
             self.assertTrue(
-                torch.allclose(state_dict_1[k], state_dict_2[k], atol=ATOL_THRESHOLD),
+                torch.allclose(state_dict_1[k].cpu(), state_dict_2[k].cpu(), atol=ATOL_THRESHOLD),
                 f"Modules do not have identical parameter values for parameter {k} (atol = {ATOL_THRESHOLD}).",
             )
 
@@ -238,6 +255,54 @@ class TestTinyMNISTReparam(SharedModelEquivalenceTester, unittest.TestCase):
         self.assert_models_NOT_equivalent(OG_model, reparam_model, verbose=False)
         return
 
+
+def get_V_dict_for_TinyConv(OG_model, use_randomized_svd):
+    """
+    Builds a synthetic dataloader and runs compute_V_by_layer for conv-only layers.
+    """
+    x = torch.randn(128, 1, 8, 8)
+    y = torch.randint(0, 10, (128,))
+    dataset = torch.utils.data.TensorDataset(x, y)
+    trainloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True)
+    criterion = torch.nn.CrossEntropyLoss(reduction="mean")
+
+    return compute_V_by_layer(
+        model_OG=OG_model,
+        k=10,
+        data_loader=trainloader,
+        criterion=criterion,
+        reparam_linear_layers=False,
+        use_randomized_svd=use_randomized_svd,
+    )
+
+class TestTinyConvReparam(SharedModelEquivalenceTester, unittest.TestCase):
+    def test_execution(self):
+        OG_model = TinyConvClassifier()
+        V_dict = get_V_dict_for_TinyConv(OG_model=OG_model, use_randomized_svd=False)
+        reparam_model = ReparamTinyConvClassifier(V_by_layer_dict=V_dict)
+
+        layerwise_reparam_init_equiv(
+            EGOP_model=reparam_model, OG_model=OG_model, seed=42
+        )
+        return
+
+    def test_equivalence(self):
+        OG_model = TinyConvClassifier()
+        V_dict = get_V_dict_for_TinyConv(OG_model=OG_model, use_randomized_svd=False)
+        reparam_model = ReparamTinyConvClassifier(V_by_layer_dict=V_dict)
+
+        # Before initializing equivalently, models should not be equivalent
+        self.assert_models_NOT_equivalent(OG_model, reparam_model, verbose=False)
+        OG_model, reparam_model = layerwise_reparam_init_equiv(
+            EGOP_model=reparam_model, OG_model=OG_model, seed=42
+        )
+        # After initializing equivalently, models should be equivalent
+        self.assert_models_are_equivalent(OG_model, reparam_model, verbose=False)
+
+        # Perturbing conv1 of reparam model should break equivalence
+        init.normal_(reparam_model.conv1.weight)
+        self.assert_models_NOT_equivalent(OG_model, reparam_model, verbose=False)
+        return
 
 if __name__ == "__main__":
     unittest.main()

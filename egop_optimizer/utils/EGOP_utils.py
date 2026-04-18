@@ -8,14 +8,17 @@ import math
 from typing import Optional, Union, Tuple
 
 from egop_optimizer.utils.device_utils import get_available_device
-from egop_optimizer.models.reparam_layers.reparam_layers import EGOP_linear_layer
+from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_linear_layer,
+    EGOP_conv2d_layer,
+)
 
 
 import pdb
 
 # List of implemented EGOP layer classes
 # Needs to be a tuple for isinstance to work
-EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer])
+EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer, EGOP_conv2d_layer])
 
 """
 TODO: 
@@ -250,10 +253,6 @@ def layerwise_reparam_init_equiv(
                 """
                 # pdb.set_trace()
                 if isinstance(module, EGOP_linear_layer):
-                    """
-                    Currently only have EGOP_linear_layer reparameterization implemented.
-                    """
-                    # pdb.set_trace()
                     V_inv = module.V_inv
                     #  If c = V.T x, then f(x) = tilde(f)(c) for reparam tilde(f)(c)= Vc
                     W_prime = torch.reshape(
@@ -264,6 +263,13 @@ def layerwise_reparam_init_equiv(
                         ),
                     )
                     EGOP_init_state_dict[name + ".weight"] = W_prime
+                elif isinstance(module, EGOP_conv2d_layer):
+                    # forward computes W_new[b] = V @ W_stored[b] per filter,
+                    # so W_stored[b] = V.T @ W_OG[b] to initialize equivalently.
+                    V = module.V.to(W.device)
+                    w_flat = W.view(W.shape[0], -1)
+                    W_prime = torch.einsum("ij,bj->bi", V.T, w_flat)
+                    EGOP_init_state_dict[name + ".weight"] = W_prime.view_as(W)
                 else:
                     raise Exception("Unsupported reparameterized layer type.")
             # If not reparameterized, copy weight directly
