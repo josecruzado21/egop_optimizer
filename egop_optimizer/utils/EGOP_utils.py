@@ -280,6 +280,11 @@ def layerwise_reparam_init_equiv(
                 EGOP_init_state_dict[name + ".bias"] = OG_model.get_submodule(
                     name
                 ).bias.clone()
+    # Copy any buffers (e.g. BatchNorm running_mean/running_var) not covered above
+    for key, val in OG_model.state_dict().items():
+        if key not in EGOP_init_state_dict:
+            EGOP_init_state_dict[key] = val.clone()
+
     # strict=True indicates we set ALL parameters using the provided state_dict
     EGOP_model.load_state_dict(EGOP_init_state_dict, strict=True)
     return OG_model, EGOP_model

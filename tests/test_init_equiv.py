@@ -23,6 +23,10 @@ from egop_optimizer.models.TinyConvClassifier import (
     TinyConvClassifier,
     ReparamTinyConvClassifier,
 )
+from egop_optimizer.models.TinyResNetClassifier import (
+    TinyResNetClassifier,
+    ReparamTinyResNetClassifier,
+)
 
 import pdb
 
@@ -295,6 +299,45 @@ class TestTinyConvReparam(SharedModelEquivalenceTester, unittest.TestCase):
         )
         self.assert_models_are_equivalent(OG_model, reparam_model, verbose=False)
         return
+
+def get_V_dict_for_TinyResNet(OG_model, use_randomized_svd):
+    x = torch.randn(128, 1, 8, 8)
+    y = torch.randint(0, 10, (128,))
+    dataset = torch.utils.data.TensorDataset(x, y)
+    trainloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True)
+    criterion = torch.nn.CrossEntropyLoss(reduction="mean")
+
+    return compute_V_by_layer(
+        model_OG=OG_model,
+        k=10,
+        data_loader=trainloader,
+        criterion=criterion,
+        reparam_linear_layers=False,
+        use_randomized_svd=use_randomized_svd,
+    )
+
+
+class TestTinyResNetReparam(SharedModelEquivalenceTester, unittest.TestCase):
+    def test_execution(self):
+        OG_model = TinyResNetClassifier()
+        V_dict = get_V_dict_for_TinyResNet(OG_model=OG_model, use_randomized_svd=False)
+        reparam_model = ReparamTinyResNetClassifier(V_by_layer_dict=V_dict)
+
+        layerwise_reparam_init_equiv(
+            EGOP_model=reparam_model, OG_model=OG_model, seed=42
+        )
+
+    def test_equivalence(self):
+        OG_model = TinyResNetClassifier()
+        V_dict = get_V_dict_for_TinyResNet(OG_model=OG_model, use_randomized_svd=False)
+        reparam_model = ReparamTinyResNetClassifier(V_by_layer_dict=V_dict)
+
+        self.assert_models_NOT_equivalent(OG_model, reparam_model, verbose=False)
+        OG_model, reparam_model = layerwise_reparam_init_equiv(
+            EGOP_model=reparam_model, OG_model=OG_model, seed=42
+        )
+        self.assert_models_are_equivalent(OG_model, reparam_model, verbose=False)
+
 
 if __name__ == "__main__":
     unittest.main()
