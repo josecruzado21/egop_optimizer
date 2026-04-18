@@ -264,6 +264,14 @@ class EGOP_linear_layer(torch.nn.Module):
         )
         return F.linear(input, W_prime, bias=self.bias)
 
+    def return_weight_copy_in_OG_coors(self):
+        # Detach and clone weights so that edits do not affect upstream weights
+        W_prime = torch.reshape(
+            torch.matmul(self.V, self.weight.detach().clone().flatten()),
+            shape=(self.out_features, self.in_features),
+        )
+        return W_prime
+
 
 class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
     """
@@ -350,3 +358,11 @@ class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
             shape=(self.out_features, self.in_features),
         )
         return F.linear(input, W_prime, bias=self.bias)
+
+    def return_weight_copy_in_OG_coors(self):
+        # Detach and clone weights so that edits do not affect upstream weights
+        W_prime = torch.reshape(
+            self.weight_d + self.V @ (self.weight_r - self.V.T @ self.weight_d),
+            shape=(self.out_features, self.in_features),
+        )
+        return W_prime
