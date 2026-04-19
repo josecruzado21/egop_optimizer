@@ -3,26 +3,25 @@ from pathlib import Path
 
 from egop_optimizer.engine.train import basic_train_loop
 from egop_optimizer.models.CIFAR10Classifier import (
-    CIFAR10_model_34_layer_residual,
-    CIFAR10_model_34_layer_residual_reparam,
+    CIFAR10_model_residual,
+    CIFAR10_model_residual_reparam,
 )
 from egop_optimizer.dataloaders.CIFAR10_dataloader import CIFAR10_dataloader
 from egop_optimizer.utils.EGOP_utils import compute_V_by_layer, layerwise_reparam_init_equiv
+from egop_optimizer.utils.device_utils import get_available_device
+DEVICE = get_available_device()
 
 
 if __name__ == "__main__":
     data_dir = Path("/Users/jose_cruzado/Documents/Personal/Code/egop_optimizer/data/")
-
     trainloader, valloader, _ = CIFAR10_dataloader(
         batch_size=128,
         data_dir=data_dir,
         dev_split=0.99,
         augment=True,
     )
-
-    OG_model = CIFAR10_model_34_layer_residual()
-    OG_model = OG_model.to("mps")
-
+    OG_model = CIFAR10_model_residual()
+    OG_model = OG_model.to(DEVICE)
     criterion = torch.nn.CrossEntropyLoss(reduction="mean")
     V_dict = compute_V_by_layer(
         model_OG=OG_model,
@@ -31,18 +30,14 @@ if __name__ == "__main__":
         criterion=criterion,
         reparam_linear_layers=False,
     )
-
-    reparam_model = CIFAR10_model_34_layer_residual_reparam(V_by_layer_dict=V_dict)
-
+    reparam_model = CIFAR10_model_residual_reparam(V_by_layer_dict=V_dict)
+    reparam_model = reparam_model.to(DEVICE)
     _, reparam_model = layerwise_reparam_init_equiv(
         EGOP_model=reparam_model, OG_model=OG_model, seed=42
     )
-
     optimizer = torch.optim.AdamW(reparam_model.parameters(), lr=1e-3, weight_decay=0.01)
     loss_method = lambda reduction: torch.nn.CrossEntropyLoss(reduction=reduction)
-
-    epochs = 4
-
+    epochs = 10
     basic_train_loop(
         model=reparam_model,
         trainloader=trainloader,
