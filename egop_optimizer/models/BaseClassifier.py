@@ -108,12 +108,16 @@ class BaseClassifier(nn.Module):
                 elif self.weight_dist == "kaiming_normal":
                     with torch.random.fork_rng(enabled=True):
                         torch.set_rng_state(self._gen.get_state())
-                        if hasattr(layer, "weight") and layer.weight is not None:
+                        if isinstance(layer, (nn.Conv2d, nn.Linear)):
                             nn.init.kaiming_normal_(
                                 layer.weight, mode="fan_in", nonlinearity="relu"
                             )
-                        if hasattr(layer, "bias") and layer.bias is not None:
-                            nn.init.constant_(layer.bias, 0)
+                            if hasattr(layer, "bias") and layer.bias is not None:
+                                nn.init.constant_(layer.bias, 0)
+                        elif isinstance(layer, nn.BatchNorm2d):
+                            nn.init.constant_(layer.weight, 1)
+                            if layer.bias is not None:
+                                nn.init.constant_(layer.bias, 0)
                         self._gen.set_state(torch.get_rng_state())
                 else:
                     layer.reset_parameters()
