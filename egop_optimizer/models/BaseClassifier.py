@@ -148,6 +148,15 @@ class BaseClassifier(nn.Module):
                 device = layer.weight.device
                 gen = self._generator_for(device)
 
+                # 1D weights belong to normalization layers (BatchNorm/LayerNorm
+                # affine scales). Kaiming/Xavier need >=2D, and a Gaussian draw
+                # would clobber the unit-scale init those layers expect, so defer
+                # to the layer's own reset_parameters for any weight_dist.
+                if layer.weight.dim() < 2:
+                    with _sync_device_rng(device, gen):
+                        layer.reset_parameters()
+                    continue
+
                 if self.weight_dist == "gaussian":
                     # Gaussian IID initialization
                     with torch.no_grad():
