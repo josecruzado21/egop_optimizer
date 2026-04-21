@@ -206,8 +206,10 @@ class TestTinyMNISTReparam(SharedModelEquivalenceTester, unittest.TestCase):
 
     def test_equivalence(self):
         OG_model = TinyMNISTClassifier()
+        OG_model = OG_model.to(DEVICE)
         V_dict = get_V_dict_for_TinyMNIST(OG_model=OG_model, use_randomized_svd=False)
         reparam_model = ReparamTinyMNISTClassifier(V_by_layer_dict=V_dict)
+        reparam_model = reparam_model.to(DEVICE)
 
         # Before initializing equivalently, models should not be equivalent
         self.assert_models_NOT_equivalent(OG_model, reparam_model, verbose=False)
@@ -220,6 +222,7 @@ class TestTinyMNISTReparam(SharedModelEquivalenceTester, unittest.TestCase):
         # If we create a new OG model with the same seed, it should still be equivalent
         # to reparam model.
         new_OG_model_same_seed = TinyMNISTClassifier()
+        new_OG_model_same_seed = new_OG_model_same_seed.to(DEVICE)
         new_OG_model_same_seed.reinitialize_seeded(seed=42)
         self.assert_models_are_equivalent(
             new_OG_model_same_seed, reparam_model, verbose=False
@@ -228,6 +231,7 @@ class TestTinyMNISTReparam(SharedModelEquivalenceTester, unittest.TestCase):
         # If we create a new OG model with a different seed, it should NOT be
         # equivalent to the reparam model
         new_OG_model_diff_seed = TinyMNISTClassifier()
+        new_OG_model_diff_seed = new_OG_model_diff_seed.to(DEVICE)
         new_OG_model_diff_seed.reinitialize_seeded(seed=987)
         self.assert_models_NOT_equivalent(
             new_OG_model_diff_seed, reparam_model, verbose=False
