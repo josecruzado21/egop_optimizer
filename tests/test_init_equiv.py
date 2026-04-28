@@ -99,7 +99,7 @@ class SharedModelEquivalenceTester:
                     if isinstance(module_2, EGOP_LAYER_CLASSES):
                         module_2_W_OG_coors = module_2.return_weight_copy_in_OG_coors()
                     else:
-                        module_2_W_OG_coors = module_1.weight.detach().clone()
+                        module_2_W_OG_coors = module_2.weight.detach().clone()
 
                     # Check if weights and biases are equal up to floating point error
                     self.assertTrue(
