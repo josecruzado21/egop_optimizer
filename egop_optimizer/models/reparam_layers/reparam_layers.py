@@ -11,7 +11,7 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 
-class Conv2d_reparam(nn.Conv2d):
+class EGOP_conv2d_layer(nn.Conv2d):
     def __init__(
         self,
         in_channels,
@@ -62,6 +62,13 @@ class Conv2d_reparam(nn.Conv2d):
             ).view(W.shape)
         return W_orig
 
+    def return_weight_copy_in_OG_coors(self):
+        W = self.weight.detach().clone()
+        V = self.V.to(W.device)
+        return torch.einsum(
+            "ij,bjk->bik", V, W.view(W.shape[0], -1).unsqueeze(-1)
+        ).view(W.shape)
+
     def reset_parameters(self):
         super().reset_parameters()
         with torch.no_grad():
@@ -80,7 +87,7 @@ class ResBlock(nn.Module):
         self.stride = stride
         self.out_channels = out_channels
         if (V1 is not None) and (V2 is not None):
-            self.conv1 = Conv2d_reparam(
+            self.conv1 = EGOP_conv2d_layer(
                 in_channels,
                 out_channels,
                 kernel_size,
@@ -89,7 +96,7 @@ class ResBlock(nn.Module):
                 padding=padding,
                 bias=False,
             )
-            self.conv2 = Conv2d_reparam(
+            self.conv2 = EGOP_conv2d_layer(
                 out_channels,
                 out_channels,
                 kernel_size,
@@ -251,3 +258,11 @@ class EGOP_linear_layer(torch.nn.Module):
             shape=(self.out_features, self.in_features),
         )
         return F.linear(input, W_prime, bias=self.bias)
+
+    def return_weight_copy_in_OG_coors(self):
+        # Detach and clone weights so that edits do not affect upstream weights
+        W_prime = torch.reshape(
+            torch.matmul(self.V, self.weight.detach().clone().flatten()),
+            shape=(self.out_features, self.in_features),
+        )
+        return W_prime
