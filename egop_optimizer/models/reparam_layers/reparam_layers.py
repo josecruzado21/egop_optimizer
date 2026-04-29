@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -285,11 +287,11 @@ class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
     A custom linear layer that reparameterizes the weight matrix in the EGOP eigenbasis
     using auxiliary variables.
 
-    This layer uses V of size d x r, but does NOT restrict the optimizer to working in a
-    reduced space because it introduces auxiliary variables that live in range(V^perp),
-    the orthogonal complement to range(V).
+    `self.weight` (shape `(out_features, in_features)`, `d = out_features * in_features`
+    elements) plays the role of the `weight_d` parameter in the auxiliary decomposition.
+    An additional learnable parameter `weight_r` (shape `(r,)`) lives in span(V).
 
-    The forward pass computes:
+    The forward pass computes (with `weight_d := self.weight.flatten()`):
         W = weight_d + V @ (weight_r - V^T @ weight_d)
 
     This is mathematically equivalent to:
@@ -312,6 +314,8 @@ class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
         device=DEVICE,
     ):
         super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
         self.d = in_features * out_features
         self.r = V.shape[1]
         if self.r >= self.d:
@@ -320,12 +324,10 @@ class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
             warnings.warn(
                 "EGOP_auxiliary_variables_linear_layer created, but provided matrix is of shape d x r for r >= d."
             )
-        # weight_r parameters are of dimension r, weight_d are of dimension d
-        self.weight_r = torch.nn.parameter.Parameter(
-            torch.empty((self.r), device=device)
-        )
-        self.weight_d = torch.nn.parameter.Parameter(
-            torch.empty((self.d), device=device)
+
+        # Manually create the parameters that nn.Linear would normally provide
+        self.weight = torch.nn.parameter.Parameter(
+            torch.empty((out_features, in_features), device=device)
         )
         if bias:
             self.bias = torch.nn.parameter.Parameter(
@@ -333,6 +335,11 @@ class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
             )
         else:
             self.register_parameter("bias", None)
+
+        # Extra parameter for the V-subspace coefficients
+        self.weight_r = torch.nn.parameter.Parameter(
+            torch.empty((self.r), device=device)
+        )
 
         self.V = _convert_V_to_tensor(V, device)
 
@@ -350,26 +357,38 @@ class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
                 "Provided matrix V does not have orthonormal columns to specified tolerance."
             )
 
-        self.in_features = in_features
-        self.out_features = out_features
+        # Initialize all parameters using the same init scheme as nn.Linear (plus weight_r).
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        # Mirror nn.Linear.reset_parameters: kaiming_uniform on weight, uniform on bias.
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        if self.bias is not None:
+            fan_in = self.in_features
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            nn.init.uniform_(self.bias, -bound, bound)
+        # Project freshly-initialized self.weight onto V's columns so the effective
+        # forward W equals self.weight (the layer behaves like a vanilla nn.Linear at init).
+        if hasattr(self, "weight_r") and hasattr(self, "V"):
+            with torch.no_grad():
+                self.weight_r.copy_(self.V.T @ self.weight.flatten())
 
     def forward(self, input):
         """
-        Compute W = weight_d + V @ (weight_r - V^T @ weight_d), then apply as linear layer.
-
-        This uses 2 matmul ops instead of 3 by leveraging:
-            V @ w_r + (I - V V^T) w_d = w_d + V @ (w_r - V^T w_d)
+        Compute W = weight_d + V @ (weight_r - V^T @ weight_d), where
+        weight_d := self.weight.flatten(). Uses 2 matmul ops via the identity
+        V @ w_r + (I - V V^T) w_d = w_d + V @ (w_r - V^T w_d).
         """
-        W_prime = torch.reshape(
-            self.weight_d + self.V @ (self.weight_r - self.V.T @ self.weight_d),
-            shape=(self.out_features, self.in_features),
-        )
+        weight_d = self.weight.flatten()
+        W_prime = (
+            weight_d + self.V @ (self.weight_r - self.V.T @ weight_d)
+        ).reshape(self.out_features, self.in_features)
         return F.linear(input, W_prime, bias=self.bias)
 
     def return_weight_copy_in_OG_coors(self):
-        # Detach and clone weights so that edits do not affect upstream weights
-        W_prime = torch.reshape(
-            self.weight_d + self.V @ (self.weight_r - self.V.T @ self.weight_d),
-            shape=(self.out_features, self.in_features),
-        )
-        return W_prime
+        # Detach so edits to the returned tensor don't leak gradients back to params
+        weight_d = self.weight.detach().flatten()
+        weight_r = self.weight_r.detach()
+        return (
+            weight_d + self.V @ (weight_r - self.V.T @ weight_d)
+        ).reshape(self.out_features, self.in_features)

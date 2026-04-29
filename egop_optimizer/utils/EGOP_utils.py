@@ -253,12 +253,8 @@ def layerwise_reparam_init_equiv(
 
     # Initialize using layer-by-layer V
     for name, module in EGOP_model.named_modules():
-        # Auxiliary layer doesn't have `self.weight` (only weight_r/weight_d), so detect
-        # it via isinstance in addition to the standard `hasattr(module, "weight")` gate.
-        is_auxiliary = isinstance(module, EGOP_auxiliary_variables_linear_layer)
-        has_weight = hasattr(module, "weight") and module.weight is not None
-
-        if has_weight or is_auxiliary:
+        # If layer has a weight parameter,
+        if hasattr(module, "weight") and module.weight is not None:
             # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
             W = OG_model.get_submodule(name).weight.clone()
             # If reparameterized layer, copy and transform
@@ -283,15 +279,17 @@ def layerwise_reparam_init_equiv(
                     EGOP_init_state_dict[name + ".weight"] = W_prime.view_as(W)
                 elif isinstance(module, EGOP_auxiliary_variables_linear_layer):
                     # Auxiliary variables initialization:
-                    # theta_r = V^T @ theta_0   (component in span(V))
-                    # theta_d = (I - V V^T) theta_0  (component in V's orthogonal complement)
-                    # Together: V @ theta_r + (I - V V^T) @ theta_d = theta_0
+                    # weight_r = V^T @ theta_0          (component in span(V))
+                    # weight   = (I - V V^T) theta_0    (component in V's orthogonal complement, reshaped to (out, in))
+                    # Together: V @ weight_r + (I - V V^T) @ weight.flatten() = theta_0
                     V = module.V
                     W_flat = W.flatten().to(V.device)
                     theta_r = torch.matmul(V.T, W_flat)
                     theta_d = W_flat - torch.matmul(V, theta_r)
                     EGOP_init_state_dict[name + ".weight_r"] = theta_r
-                    EGOP_init_state_dict[name + ".weight_d"] = theta_d
+                    EGOP_init_state_dict[name + ".weight"] = theta_d.reshape(
+                        module.out_features, module.in_features
+                    )
                 else:
                     raise Exception("Unsupported reparameterized layer type.")
             # If not reparameterized, copy weight directly
