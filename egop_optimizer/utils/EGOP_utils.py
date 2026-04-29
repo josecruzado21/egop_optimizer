@@ -11,6 +11,7 @@ from egop_optimizer.utils.device_utils import get_available_device
 from egop_optimizer.models.reparam_layers.reparam_layers import (
     EGOP_linear_layer,
     EGOP_auxiliary_variables_linear_layer,
+    EGOP_conv2d_layer,
 )
 
 
@@ -18,7 +19,9 @@ import pdb
 
 # List of implemented EGOP layer classes
 # Needs to be a tuple for isinstance to work
-EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer, EGOP_auxiliary_variables_linear_layer])
+EGOP_LAYER_CLASSES = tuple(
+    [EGOP_linear_layer, EGOP_auxiliary_variables_linear_layer, EGOP_conv2d_layer]
+)
 
 """
 TODO: 
@@ -231,7 +234,8 @@ def layerwise_reparam_init_equiv(
     Samples weights for the original model, then transforms and assigns those weights
     to each EGOP layer using the stored eigenbasis V. Non-reparameterized layers are copied directly.
 
-    Supports: EGOP_linear_layer (full square V), EGOP_auxiliary_variables_linear_layer (d x r with auxiliary vars).
+    Supports: EGOP_linear_layer (full square V), EGOP_conv2d_layer (per-filter d x d V),
+    and EGOP_auxiliary_variables_linear_layer (d x r with auxiliary vars).
     """
     # If we don't receive a seed, we'll initialize OG model randomly.
     if seed is None:
@@ -241,6 +245,7 @@ def layerwise_reparam_init_equiv(
         OG_model.reinitialize_seeded(seed=seed)
 
     # Check that EGOP_model and OG_model have the same list of named_modules.
+    # If they do not, this function will raise an exception.
     check_model_structure(EGOP_model, OG_model)
 
     # Create new state_dict for EGOP model
@@ -248,11 +253,13 @@ def layerwise_reparam_init_equiv(
 
     # Initialize using layer-by-layer V
     for name, module in EGOP_model.named_modules():
-        if type(module) in [
-            torch.nn.modules.conv.Conv2d,
-            torch.nn.modules.linear.Linear,
-        ] or isinstance(module, EGOP_LAYER_CLASSES):
-            # Get a copy of the parameter tensor in original coordinates
+        # Auxiliary layer doesn't have `self.weight` (only weight_r/weight_d), so detect
+        # it via isinstance in addition to the standard `hasattr(module, "weight")` gate.
+        is_auxiliary = isinstance(module, EGOP_auxiliary_variables_linear_layer)
+        has_weight = hasattr(module, "weight") and module.weight is not None
+
+        if has_weight or is_auxiliary:
+            # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
             W = OG_model.get_submodule(name).weight.clone()
             # If reparameterized layer, copy and transform
             if isinstance(module, EGOP_LAYER_CLASSES):
@@ -267,22 +274,24 @@ def layerwise_reparam_init_equiv(
                         ),
                     )
                     EGOP_init_state_dict[name + ".weight"] = W_prime
-
+                elif isinstance(module, EGOP_conv2d_layer):
+                    # forward computes W_new[b] = V @ W_stored[b] per filter,
+                    # so W_stored[b] = V.T @ W_OG[b] to initialize equivalently.
+                    V = module.V.to(W.device)
+                    w_flat = W.view(W.shape[0], -1)
+                    W_prime = torch.einsum("ij,bj->bi", V.T, w_flat)
+                    EGOP_init_state_dict[name + ".weight"] = W_prime.view_as(W)
                 elif isinstance(module, EGOP_auxiliary_variables_linear_layer):
                     # Auxiliary variables initialization:
-                    # theta_r = V^T @ theta_0
-                    # theta_d = (I - V @ V^T) @ theta_0
-                    # This ensures V @ theta_r + (I - V @ V^T) @ theta_d = theta_0
+                    # theta_r = V^T @ theta_0   (component in span(V))
+                    # theta_d = (I - V V^T) theta_0  (component in V's orthogonal complement)
+                    # Together: V @ theta_r + (I - V V^T) @ theta_d = theta_0
                     V = module.V
                     W_flat = W.flatten().to(V.device)
-
                     theta_r = torch.matmul(V.T, W_flat)
-                    VVT_W = torch.matmul(V, torch.matmul(V.T, W_flat))
-                    theta_d = W_flat - VVT_W
-
+                    theta_d = W_flat - torch.matmul(V, theta_r)
                     EGOP_init_state_dict[name + ".weight_r"] = theta_r
                     EGOP_init_state_dict[name + ".weight_d"] = theta_d
-
                 else:
                     raise Exception("Unsupported reparameterized layer type.")
             # If not reparameterized, copy weight directly
@@ -293,6 +302,11 @@ def layerwise_reparam_init_equiv(
                 EGOP_init_state_dict[name + ".bias"] = OG_model.get_submodule(
                     name
                 ).bias.clone()
+    # Copy any buffers (e.g. BatchNorm running_mean/running_var) not covered above
+    for key, val in OG_model.state_dict().items():
+        if key not in EGOP_init_state_dict:
+            EGOP_init_state_dict[key] = val.clone()
+
     # strict=True indicates we set ALL parameters using the provided state_dict
     EGOP_model.load_state_dict(EGOP_init_state_dict, strict=True)
     return OG_model, EGOP_model
@@ -302,6 +316,8 @@ def check_model_structure(model_1, model_2):
     """
     Checks if module_1 and module_2 have compatible sets of named_modules and parameters.
     If they do not, raises an exception.
+
+    Order of modules matters in the recursive traversal.
     """
     names_1 = [n for n, _ in model_1.named_modules()]
     names_2 = [n for n, _ in model_2.named_modules()]
