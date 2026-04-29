@@ -1,4 +1,5 @@
 import torch
+import torch.nn.init as init
 import unittest
 
 from egop_optimizer.models.FashionMNISTClassfier import (
@@ -6,18 +7,26 @@ from egop_optimizer.models.FashionMNISTClassfier import (
     AuxiliaryReparamFashionMNISTClassifier,
 )
 from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_linear_layer,
     EGOP_auxiliary_variables_linear_layer,
 )
 from egop_optimizer.dataloaders.fashionMNIST_dataloader import fashionMNIST_dataloader
 from egop_optimizer.utils.EGOP_utils import (
     compute_V_by_layer,
     layerwise_reparam_init_equiv,
+    check_model_structure,
 )
 from egop_optimizer.utils.device_utils import get_available_device
 
 DEVICE = get_available_device()
 
 _MINI_MODEL_PARAMS = {"pool_factor": 1, "hidden_size": 100, "num_classes": 10}
+
+# Tuple for isinstance checks across all EGOP layer types
+EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer, EGOP_auxiliary_variables_linear_layer])
+
+# Absolute tolerance for torch.isclose / torch.allclose checks
+ATOL_THRESHOLD = 1e-5
 
 
 def setUpModule():
@@ -36,6 +45,99 @@ def get_V_dict_for_FashionMNIST(OG_model, use_randomized_svd=True, n_components=
         use_randomized_svd=use_randomized_svd,
         n_components=n_components,
     )
+
+
+def check_if_leaf_node(module):
+    """Tests if a module has nested submodules."""
+    return len(list(module.children())) == 0
+
+
+class SharedModelEquivalenceTester:
+    """
+    A shared class that implements test_models_are_equivalent.
+    Named assert_models_are_equivalent (not test_*) to avoid unittest auto-discovery.
+    """
+
+    def assert_models_are_equivalent(self, model_1, model_2, verbose=True):
+        check_model_structure(model_1, model_2)
+
+        for name, module in model_1.named_modules():
+            if check_if_leaf_node(module):
+                module_1 = model_1.get_submodule(name)
+                module_2 = model_2.get_submodule(name)
+
+                if isinstance(module_1, EGOP_LAYER_CLASSES) or isinstance(
+                    module_2, EGOP_LAYER_CLASSES
+                ):
+                    if verbose:
+                        print(
+                            f"Testing for EQUIVALENCE on modules of types: {type(module_1), type(module_2)}"
+                        )
+                    if isinstance(module_1, EGOP_LAYER_CLASSES):
+                        module_1_W_OG_coors = module_1.return_weight_copy_in_OG_coors()
+                    else:
+                        module_1_W_OG_coors = module_1.weight.detach().clone()
+                    if isinstance(module_2, EGOP_LAYER_CLASSES):
+                        module_2_W_OG_coors = module_2.return_weight_copy_in_OG_coors()
+                    else:
+                        module_2_W_OG_coors = module_2.weight.detach().clone()
+
+                    self.assertTrue(
+                        torch.allclose(
+                            module_1_W_OG_coors,
+                            module_2_W_OG_coors,
+                            atol=ATOL_THRESHOLD,
+                        ),
+                        f"Weights not equivalent for modules of name {name} (atol={ATOL_THRESHOLD}).",
+                    )
+                    if module_1.bias is not None and module_2.bias is not None:
+                        self.assertTrue(
+                            torch.allclose(
+                                module_1.bias.detach().clone(),
+                                module_2.bias.detach().clone(),
+                                atol=ATOL_THRESHOLD,
+                            ),
+                            f"Biases not equivalent for modules of name {name} (atol={ATOL_THRESHOLD}).",
+                        )
+                else:
+                    if verbose:
+                        print(
+                            f"Testing for identicality on modules of types: {type(module_1), type(module_2)}"
+                        )
+                    self.assertTrue(
+                        self.assert_modules_identical(module_1, module_2),
+                        f"Parameters not identical for modules of name {name} (modules of type {type(module_1)}).",
+                    )
+            else:
+                pass
+
+        return True
+
+    def assert_models_NOT_equivalent(self, model_1, model_2, verbose=True):
+        try:
+            self.assert_models_are_equivalent(model_1, model_2, verbose=verbose)
+        except AssertionError:
+            return  # expected
+        self.fail(
+            "Models were expected to NOT be equivalent, but were found to be equivalent."
+        )
+
+    def assert_modules_identical(self, module_1, module_2):
+        state_dict_1 = module_1.state_dict()
+        state_dict_2 = module_2.state_dict()
+
+        self.assertTrue(
+            state_dict_1.keys() == state_dict_2.keys(),
+            f"Modules do not have identical keys. module_1 keys = {state_dict_1.keys()}, module_2 keys = {state_dict_2.keys()}",
+        )
+
+        for k in state_dict_1:
+            self.assertTrue(
+                torch.allclose(state_dict_1[k], state_dict_2[k], atol=ATOL_THRESHOLD),
+                f"Modules do not have identical parameter values for parameter {k} (atol = {ATOL_THRESHOLD}).",
+            )
+
+        return True
 
 
 class TestAuxiliaryLayer(unittest.TestCase):
@@ -219,6 +321,67 @@ class TestAuxiliaryInitEquiv(unittest.TestCase):
                 abs(og_loss.item() - aux_loss.item()) < error_tolerance,
                 f"Step {step}: Loss mismatch OG={og_loss.item():.6f} vs Aux={aux_loss.item():.6f}",
             )
+
+
+class TestAuxiliaryReparam(SharedModelEquivalenceTester, unittest.TestCase):
+    """
+    Mirrors TestTinyMNISTReparam.test_equivalence from test_init_equiv.py,
+    but applied to the auxiliary variables reparameterization.
+    """
+
+    def test_execution(self):
+        OG_model = FashionMNISTClassifier(**_MINI_MODEL_PARAMS)
+        V_dict = get_V_dict_for_FashionMNIST(OG_model)
+        reparam_model = AuxiliaryReparamFashionMNISTClassifier(
+            V_by_layer_dict=V_dict, **_MINI_MODEL_PARAMS
+        )
+        OG_model.to(DEVICE)
+        reparam_model.to(DEVICE)
+        reparam_model.move_bases_to_device(DEVICE)
+
+        layerwise_reparam_init_equiv(
+            EGOP_model=reparam_model, OG_model=OG_model, seed=42
+        )
+        return
+
+    def test_equivalence(self):
+        OG_model = FashionMNISTClassifier(**_MINI_MODEL_PARAMS)
+        V_dict = get_V_dict_for_FashionMNIST(OG_model)
+        reparam_model = AuxiliaryReparamFashionMNISTClassifier(
+            V_by_layer_dict=V_dict, **_MINI_MODEL_PARAMS
+        )
+        OG_model.to(DEVICE)
+        reparam_model.to(DEVICE)
+        reparam_model.move_bases_to_device(DEVICE)
+
+        # Before initializing equivalently, models should not be equivalent
+        self.assert_models_NOT_equivalent(OG_model, reparam_model, verbose=False)
+        OG_model, reparam_model = layerwise_reparam_init_equiv(
+            EGOP_model=reparam_model, OG_model=OG_model, seed=42
+        )
+        # After initializing equivalently, models should be equivalent
+        self.assert_models_are_equivalent(OG_model, reparam_model, verbose=False)
+
+        # New OG model with the same seed should still be equivalent to reparam model
+        new_OG_model_same_seed = FashionMNISTClassifier(**_MINI_MODEL_PARAMS)
+        new_OG_model_same_seed.to(DEVICE)
+        new_OG_model_same_seed.reinitialize_seeded(seed=42)
+        self.assert_models_are_equivalent(
+            new_OG_model_same_seed, reparam_model, verbose=False
+        )
+
+        # New OG model with a different seed should NOT be equivalent to reparam model
+        new_OG_model_diff_seed = FashionMNISTClassifier(**_MINI_MODEL_PARAMS)
+        new_OG_model_diff_seed.to(DEVICE)
+        new_OG_model_diff_seed.reinitialize_seeded(seed=987)
+        self.assert_models_NOT_equivalent(
+            new_OG_model_diff_seed, reparam_model, verbose=False
+        )
+
+        # If we randomly reinitialize a parameter of the reparam model, it should no longer be equivalent
+        init.normal_(reparam_model.fc1.weight_r)
+        self.assert_models_NOT_equivalent(OG_model, reparam_model, verbose=False)
+        return
 
 
 if __name__ == "__main__":
