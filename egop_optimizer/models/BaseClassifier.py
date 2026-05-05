@@ -193,6 +193,13 @@ class BaseClassifier(nn.Module):
                     with _sync_device_rng(device, gen):
                         layer.reset_parameters()
 
+                # Give the layer a chance to sync any secondary parameters that
+                # depend on self.weight (e.g. EGOP_auxiliary_variables_linear_layer
+                # derives weight_d / weight_r from self.weight via V).
+                # Most layers don't define this method and silently skip.
+                if hasattr(layer, "_post_weight_init_hook"):
+                    layer._post_weight_init_hook()
+
 
 class ReparamBaseClassifier(BaseClassifier):
     def __init__(self, V_by_layer_dict, **kwargs):

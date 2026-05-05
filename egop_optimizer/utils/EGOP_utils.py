@@ -253,8 +253,10 @@ def layerwise_reparam_init_equiv(
 
     # Initialize using layer-by-layer V
     for name, module in EGOP_model.named_modules():
-        # If layer has a weight parameter,
-        if hasattr(module, "weight") and module.weight is not None:
+        is_auxiliary = isinstance(module, EGOP_auxiliary_variables_linear_layer)
+        has_weight = hasattr(module, "weight") and module.weight is not None
+
+        if has_weight or is_auxiliary:
             # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
             W = OG_model.get_submodule(name).weight.clone()
             # If reparameterized layer, copy and transform
@@ -278,18 +280,21 @@ def layerwise_reparam_init_equiv(
                     W_prime = torch.einsum("ij,bj->bi", V.T, w_flat)
                     EGOP_init_state_dict[name + ".weight"] = W_prime.view_as(W)
                 elif isinstance(module, EGOP_auxiliary_variables_linear_layer):
-                    # Auxiliary variables initialization:
-                    # weight_r = V^T @ theta_0          (component in span(V))
-                    # weight   = (I - V V^T) theta_0    (component in V's orthogonal complement, reshaped to (out, in))
-                    # Together: V @ weight_r + (I - V V^T) @ weight.flatten() = theta_0
+
+                    #   weight_r = V^T @ self.weight.flatten()
+                    #   weight_d = self.weight.flatten() - V @ weight_r
                     V = module.V
-                    W_flat = W.flatten().to(V.device)
+                    W_2d = (
+                        W
+                        if W.dim() == 2
+                        else W.view(module.out_features, module.in_features)
+                    )
+                    W_flat = W_2d.flatten().to(V.device)
                     theta_r = torch.matmul(V.T, W_flat)
                     theta_d = W_flat - torch.matmul(V, theta_r)
+                    EGOP_init_state_dict[name + ".weight"] = W_2d.clone()
                     EGOP_init_state_dict[name + ".weight_r"] = theta_r
-                    EGOP_init_state_dict[name + ".weight"] = theta_d.reshape(
-                        module.out_features, module.in_features
-                    )
+                    EGOP_init_state_dict[name + ".weight_d"] = theta_d
                 else:
                     raise Exception("Unsupported reparameterized layer type.")
             # If not reparameterized, copy weight directly
@@ -300,13 +305,27 @@ def layerwise_reparam_init_equiv(
                 EGOP_init_state_dict[name + ".bias"] = OG_model.get_submodule(
                     name
                 ).bias.clone()
-    # Copy any buffers (e.g. BatchNorm running_mean/running_var) not covered above
+    # Copy any buffers (e.g. BatchNorm running_mean/running_var) not covered above.
+    # Only copy keys that EGOP_model actually has — auxiliary layers expose
+    # weight_r/weight_d instead of weight, so blindly copying OG's keys would
+    # inject an unexpected `fc1.weight` and break load_state_dict(strict=True).
+    EGOP_state_dict_keys = set(EGOP_model.state_dict().keys())
     for key, val in OG_model.state_dict().items():
-        if key not in EGOP_init_state_dict:
+        if key not in EGOP_init_state_dict and key in EGOP_state_dict_keys:
             EGOP_init_state_dict[key] = val.clone()
 
     # strict=True indicates we set ALL parameters using the provided state_dict
     EGOP_model.load_state_dict(EGOP_init_state_dict, strict=True)
+
+    # Trigger _post_weight_init_hook on layers that define it. For auxiliary layers
+    # this is idempotent (init_equiv already wrote consistent values), but it ensures
+    # both init_equiv and reinit_seeded paths follow the same conceptual flow:
+    #   "set self.weight (source of truth) → hook derives weight_d / weight_r"
+    # The hook is the single canonical place that defines the decomposition formula.
+    for module in EGOP_model.modules():
+        if hasattr(module, "_post_weight_init_hook"):
+            module._post_weight_init_hook()
+
     return OG_model, EGOP_model
 
 

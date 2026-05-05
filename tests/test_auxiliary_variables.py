@@ -151,9 +151,7 @@ class TestAuxiliaryLayer(unittest.TestCase):
             V=V, in_features=10, out_features=10, device="cpu"
         )
         self.assertEqual(layer.weight_r.shape[0], r)
-        # weight_d is now stored as the inherited nn.Linear weight (shape (out, in))
-        self.assertEqual(layer.weight.shape, (10, 10))
-        self.assertEqual(layer.weight.numel(), d)
+        self.assertEqual(layer.weight_d.shape[0], d)
 
     def test_forward_pass(self):
         """Verify forward pass produces correct output shape."""
@@ -165,7 +163,7 @@ class TestAuxiliaryLayer(unittest.TestCase):
         )
         # Initialize weights
         torch.nn.init.normal_(layer.weight_r)
-        torch.nn.init.normal_(layer.weight)
+        torch.nn.init.normal_(layer.weight_d)
         torch.nn.init.zeros_(layer.bias)
 
         x = torch.randn(8, in_f)
@@ -242,8 +240,8 @@ class TestAuxiliaryInitEquiv(unittest.TestCase):
 
     def test_init_equiv_weight_reconstruction(self):
         """
-        After init_equiv, reconstructing W = weight_d + V @ (weight_r - V^T @ weight_d),
-        where weight_d := self.weight.flatten(), should recover the original weight matrix.
+        After init_equiv, reconstructing W = weight_d + V @ (weight_r - V^T @ weight_d)
+        should recover the original weight matrix.
         """
         abs_tolerance = 1e-4
 
@@ -264,9 +262,8 @@ class TestAuxiliaryInitEquiv(unittest.TestCase):
         for name, module in aux_model.named_modules():
             if isinstance(module, EGOP_auxiliary_variables_linear_layer):
                 V = module.V
-                weight_d = module.weight.flatten()
                 W_reconstructed = (
-                    weight_d + V @ (module.weight_r - V.T @ weight_d)
+                    module.weight_d + V @ (module.weight_r - V.T @ module.weight_d)
                 )
                 W_reconstructed = W_reconstructed.reshape(
                     module.out_features, module.in_features

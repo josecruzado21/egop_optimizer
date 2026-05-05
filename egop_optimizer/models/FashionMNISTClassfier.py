@@ -87,9 +87,12 @@ class AuxiliaryReparamFashionMNISTClassifier(ReparamBaseClassifier):
         pool_factor: Optional[int] = None,
         hidden_size: int = 128,
         num_classes: int = 10,
+        weight_dist: str = "default",
         seed=None,
     ):
-        super().__init__(V_by_layer_dict=V_by_layer_dict, seed=seed)
+        super().__init__(
+            V_by_layer_dict=V_by_layer_dict, seed=seed, weight_dist=weight_dist
+        )
         if pool_factor is None:
             self.optional_pool = nn.Identity()
             fc_input_size = 28**2

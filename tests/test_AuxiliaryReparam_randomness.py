@@ -42,10 +42,11 @@ def _make_V_dict():
     )
 
 
-def _make_aux_model(V_dict, seed=None):
+def _make_aux_model(V_dict, seed=None, weight_dist="default"):
     return AuxiliaryReparamFashionMNISTClassifier(
         V_by_layer_dict=V_dict,
         seed=seed,
+        weight_dist=weight_dist,
         **_MINI_MODEL_PARAMS,
     )
 
@@ -55,9 +56,7 @@ def _fc1_weight_r(model):
 
 
 def _fc1_weight_d(model):
-    # After Method A, the d-dimensional auxiliary parameter is stored as the
-    # inherited nn.Linear weight (shape (out, in)).
-    return dict(model.named_parameters())["fc1.weight"].detach().clone()
+    return dict(model.named_parameters())["fc1.weight_d"].detach().clone()
 
 
 class TestAuxiliaryRandomnessControl(unittest.TestCase):
@@ -251,9 +250,9 @@ class TestAuxiliaryRandomnessControl(unittest.TestCase):
 
         for name in (
             "fc1.weight_r",
-            "fc1.weight",
+            "fc1.weight_d",
             "fc2.weight_r",
-            "fc2.weight",
+            "fc2.weight_d",
         ):
             self.assertTrue(
                 torch.allclose(params1[name].detach(), params2[name].detach(), atol=1e-7),
@@ -282,6 +281,119 @@ class TestAuxiliaryRandomnessControl(unittest.TestCase):
             torch.allclose(wd_before, wd_after, atol=1e-7),
             "reinitialize_seeded should change fc1.weight_d (currently a no-op for auxiliary layers)",
         )
+
+
+class TestAuxiliaryWeightDistRandomness(unittest.TestCase):
+    """
+    Diagnostic suite that runs the core randomness checks for each non-default
+    weight_dist value ("gaussian", "kaiming_normal", "xavier_normal") to expose
+    how reinitialize_seeded behaves on auxiliary layers under each distribution.
+
+    Expected results given the current implementation (Method A, default branch
+    only invokes our reset_parameters):
+      - "default": all checks pass — weight + weight_r both reset coherently.
+      - "gaussian" / "kaiming_normal": self.weight is overwritten directly,
+        but weight_r is NOT touched and falls out of sync with self.weight.
+        Some checks may pass (weight changes), others may fail (weight_r stale).
+      - "xavier_normal": auxiliary layer is not nn.Linear, so the branch's
+        isinstance gate is skipped — silent no-op for both weight and weight_r.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.V_dict = _make_V_dict()
+
+    def _run_diagnostics(self, weight_dist):
+        """Run a battery of checks and return a dict of pass/fail results."""
+        results = {}
+
+        # 1. Same seed twice on same model -> identical weight + weight_r
+        model = _make_aux_model(self.V_dict, weight_dist=weight_dist)
+        model.reinitialize_seeded(seed=42)
+        wr1 = _fc1_weight_r(model)
+        wd1 = _fc1_weight_d(model)
+        model.reinitialize_seeded(seed=42)
+        wr2 = _fc1_weight_r(model)
+        wd2 = _fc1_weight_d(model)
+        results["same_seed_weight_d_consistent"] = torch.allclose(wd1, wd2, atol=1e-7)
+        results["same_seed_weight_r_consistent"] = torch.allclose(wr1, wr2, atol=1e-7)
+
+        # 2. Two independent models same seed -> identical
+        m1 = _make_aux_model(self.V_dict, weight_dist=weight_dist)
+        m2 = _make_aux_model(self.V_dict, weight_dist=weight_dist)
+        m1.reinitialize_seeded(seed=2)
+        m2.reinitialize_seeded(seed=2)
+        results["two_models_same_seed_weight_d"] = torch.allclose(
+            _fc1_weight_d(m1), _fc1_weight_d(m2), atol=1e-7
+        )
+        results["two_models_same_seed_weight_r"] = torch.allclose(
+            _fc1_weight_r(m1), _fc1_weight_r(m2), atol=1e-7
+        )
+
+        # 3. Different seeds -> different
+        model = _make_aux_model(self.V_dict, weight_dist=weight_dist)
+        model.reinitialize_seeded(seed=1)
+        wr_a = _fc1_weight_r(model)
+        wd_a = _fc1_weight_d(model)
+        model.reinitialize_seeded(seed=2)
+        wr_b = _fc1_weight_r(model)
+        wd_b = _fc1_weight_d(model)
+        results["diff_seed_weight_d_changes"] = not torch.allclose(wd_a, wd_b, atol=1e-7)
+        results["diff_seed_weight_r_changes"] = not torch.allclose(wr_a, wr_b, atol=1e-7)
+
+        # 4. Reinit actually changes parameters from construction
+        model = _make_aux_model(self.V_dict, weight_dist=weight_dist)
+        wr_before = _fc1_weight_r(model)
+        wd_before = _fc1_weight_d(model)
+        model.reinitialize_seeded(seed=42)
+        wr_after = _fc1_weight_r(model)
+        wd_after = _fc1_weight_d(model)
+        results["reinit_changes_weight_d"] = not torch.allclose(
+            wd_before, wd_after, atol=1e-7
+        )
+        results["reinit_changes_weight_r"] = not torch.allclose(
+            wr_before, wr_after, atol=1e-7
+        )
+
+        # 5. Coherence: after reinit, the layer should still satisfy the
+        # invariant that forward W == self.weight (the init scratchpad).
+        # This means: weight_r = V^T @ self.weight.flatten() and
+        #             weight_d = (I - VV^T) @ self.weight.flatten().
+        model = _make_aux_model(self.V_dict, weight_dist=weight_dist)
+        model.reinitialize_seeded(seed=42)
+        with torch.no_grad():
+            W_flat = model.fc1.weight.flatten()
+            expected_wr = model.fc1.V.T @ W_flat
+            expected_wd = W_flat - model.fc1.V @ expected_wr
+        actual_wr = model.fc1.weight_r
+        actual_wd = model.fc1.weight_d
+        results["weight_r_equals_VT_weight"] = torch.allclose(
+            expected_wr, actual_wr, atol=1e-5
+        ) and torch.allclose(expected_wd, actual_wd, atol=1e-5)
+
+        return results
+
+    def _print_diagnostics(self, weight_dist, results):
+        print(f"\n  --- weight_dist={weight_dist!r} ---")
+        for k, v in results.items():
+            mark = "PASS" if v else "FAIL"
+            print(f"    [{mark}] {k}")
+
+    def test_default(self):
+        results = self._run_diagnostics("default")
+        self._print_diagnostics("default", results)
+
+    def test_gaussian(self):
+        results = self._run_diagnostics("gaussian")
+        self._print_diagnostics("gaussian", results)
+
+    def test_kaiming_normal(self):
+        results = self._run_diagnostics("kaiming_normal")
+        self._print_diagnostics("kaiming_normal", results)
+
+    def test_xavier_normal(self):
+        results = self._run_diagnostics("xavier_normal")
+        self._print_diagnostics("xavier_normal", results)
 
 
 if __name__ == "__main__":
