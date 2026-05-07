@@ -277,6 +277,7 @@ def run_comparison_experiment(
         batch_size=config["batch_size"],
         num_classes=config["num_classes"],
         num_workers=NUM_WORKERS,
+        dev_split=0.25,
     )
 
     trial_seeds: List[int] = []

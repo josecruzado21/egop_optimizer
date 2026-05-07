@@ -111,7 +111,7 @@ DEFAULT_CONFIG = {
     "num_classes": 10,
     "pool_factor": 1,
     "batch_size": 300,
-    "egop_factor": 0.1,
+    "egop_factor": 0.01,
     "weight_dist": "gaussian",
 }
 
