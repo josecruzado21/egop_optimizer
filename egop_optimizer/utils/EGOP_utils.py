@@ -160,8 +160,21 @@ def compute_k_gradients_all_layers(
 
 
 def count_params(model):
-    """Returns the total number of parameters in the model."""
-    return sum(p.numel() for p in model.parameters())
+    """Count weight elements of layers eligible for EGOP reparameterization.
+
+    Used by compute_V_by_layer to derive k from EGOP_oversampling_factor:
+        k = int(EGOP_oversampling_factor * count_params(model))
+
+    Only nn.Conv2d and nn.Linear weights are counted (recursively, so layers
+    inside nested submodules like ResBlock are included). Bias parameters,
+    BatchNorm affine parameters, and any non-EGOP parameters (e.g. auxiliary
+    layer's weight_r / weight_d) are excluded — they should not influence k.
+    """
+    num_params = 0
+    for module in model.modules():
+        if isinstance(module, (nn.Linear, nn.Conv2d)):
+            num_params += module.weight.numel()
+    return num_params
 
 
 def compute_V_by_layer(
