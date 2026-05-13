@@ -9,7 +9,7 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 LR_VALUES = [0.01, 0.001, 0.0001, 0.00001, 0.000001]
-WD_VALUES = [0.1, 0.001, 0.0001]
+WD_VALUES = [0.01]
 TOTAL_EPOCHS = 10
 
 
