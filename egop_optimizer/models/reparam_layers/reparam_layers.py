@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -148,6 +150,18 @@ def identity_downsample(x, out_channels, stride):
     return x
 
 
+def _convert_V_to_tensor(V, device):
+    """Convert V matrix from numpy or tensor to a float tensor on the given device."""
+    if type(V) == np.ndarray:
+        return torch.from_numpy(V).type(torch.FloatTensor).to(device)
+    elif type(V) == torch.Tensor:
+        return V.to(device)
+    else:
+        raise Exception(
+            "Unsupported format for reparameterization matrix. Expected np.ndarray or torch.Tensor."
+        )
+
+
 class EGOP_linear_layer(torch.nn.Module):
     """
     A custom linear layer that reparameterizes the weight matrix in the EGOP eigenbasis.
@@ -266,3 +280,149 @@ class EGOP_linear_layer(torch.nn.Module):
             shape=(self.out_features, self.in_features),
         )
         return W_prime
+
+
+class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
+    """
+    A custom linear layer that reparameterizes the weight matrix in the EGOP eigenbasis
+    using auxiliary variables (matches old repo's naming: weight_r and weight_d).
+
+    Trainable parameters used by forward:
+        weight_d (1D, length d = out_features * in_features): the "full-space" component
+        weight_r (1D, length r): the V-subspace coefficients
+
+    Init-only scratchpad (NOT used by forward):
+        weight (2D, (out, in), requires_grad=False): exists so BaseClassifier's
+            `hasattr(layer, "weight")` gate matches and the various weight_dist
+            branches can write a fresh (out, in) matrix here. Right after
+            BaseClassifier writes it, `_post_weight_init_hook` re-derives
+            weight_d / weight_r from it via the same orthogonal decomposition
+            used by init_equiv:
+                weight_r = V^T @ weight.flatten()
+                weight_d = weight.flatten() - V @ weight_r
+            After init, this scratchpad is irrelevant — forward only reads
+            weight_d and weight_r.
+
+    The forward pass computes:
+        W = weight_d + V @ (weight_r - V^T @ weight_d)
+
+    This is mathematically equivalent to:
+        W = V @ weight_r + (I - V @ V^T) @ weight_d
+
+    Args:
+        V (Union[np.ndarray, torch.Tensor]): A d x r matrix whose columns are
+            the eigenvectors for reparameterization.
+        in_features (int): Number of input features.
+        out_features (int): Number of output features.
+        bias (bool): If True, includes a learnable bias parameter.
+    """
+
+    def __init__(
+        self,
+        V: Union[np.ndarray, torch.Tensor],
+        in_features: int,
+        out_features: int,
+        bias: bool = False,
+        device=DEVICE,
+    ):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.d = in_features * out_features
+        self.r = V.shape[1]
+        if self.r >= self.d:
+            import warnings
+
+            warnings.warn(
+                "EGOP_auxiliary_variables_linear_layer created, but provided matrix is of shape d x r for r >= d."
+            )
+
+        # Init-only scratchpad. requires_grad=False: not part of training,
+        # doesn't consume optimizer state. Forward never reads it.
+        self.weight = torch.nn.parameter.Parameter(
+            torch.empty((out_features, in_features), device=device),
+            requires_grad=False,
+        )
+        # Real trainable parameters.
+        self.weight_d = torch.nn.parameter.Parameter(
+            torch.empty(self.d, device=device)
+        )
+        self.weight_r = torch.nn.parameter.Parameter(
+            torch.empty(self.r, device=device)
+        )
+        if bias:
+            self.bias = torch.nn.parameter.Parameter(
+                torch.empty(out_features, device=device)
+            )
+        else:
+            self.register_parameter("bias", None)
+
+        self.V = _convert_V_to_tensor(V, device)
+
+        # Check that V has orthonormal columns
+        try:
+            assert torch.all(
+                torch.isclose(
+                    self.V.T @ self.V,
+                    torch.eye(self.r, device=device),
+                    atol=1e-5,
+                )
+            )
+        except:
+            raise Exception(
+                "Provided matrix V does not have orthonormal columns to specified tolerance."
+            )
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        # 1) Initialize the scratchpad self.weight using nn.Linear-style kaiming_uniform.
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        # 2) Initialize bias the same way nn.Linear does.
+        if self.bias is not None:
+            fan_in = self.in_features
+            bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+            nn.init.uniform_(self.bias, -bound, bound)
+        # 3) Decompose self.weight into weight_d (orth complement) and weight_r (V subspace).
+        self._sync_from_weight()
+
+    def _sync_from_weight(self):
+        """Re-derive weight_d and weight_r from the current self.weight scratchpad.
+
+        Math (same as init_equiv with W_OG replaced by self.weight):
+            weight_r = V^T @ weight.flatten()
+            weight_d = weight.flatten() - V @ weight_r   (= (I - V V^T) @ weight.flatten())
+
+        After this, the effective forward W = weight_d + V @ (weight_r - V^T @ weight_d)
+        equals self.weight, so the layer behaves like a vanilla nn.Linear at init.
+        """
+        if not (hasattr(self, "weight_d") and hasattr(self, "weight_r") and hasattr(self, "V")):
+            return
+        with torch.no_grad():
+            W_flat = self.weight.flatten()
+            self.weight_r.copy_(self.V.T @ W_flat)
+            self.weight_d.copy_(W_flat - self.V @ self.weight_r)
+
+    def _post_weight_init_hook(self):
+        """Hook called by BaseClassifier.reinitialize after writing self.weight under
+        any weight_dist (gaussian / kaiming_normal / etc). Forwards to _sync_from_weight."""
+        self._sync_from_weight()
+
+    def forward(self, input):
+        """
+        Compute W = weight_d + V @ (weight_r - V^T @ weight_d). Uses 2 matmul ops
+        via the identity V @ w_r + (I - V V^T) w_d = w_d + V @ (w_r - V^T w_d).
+        Note: self.weight (the init scratchpad) is NOT used here.
+        """
+        W_prime = (
+            self.weight_d + self.V @ (self.weight_r - self.V.T @ self.weight_d)
+        ).reshape(self.out_features, self.in_features)
+        return F.linear(input, W_prime, bias=self.bias)
+
+    def return_weight_copy_in_OG_coors(self):
+        # Detach so edits to the returned tensor don't leak gradients back to params
+        weight_d = self.weight_d.detach()
+        weight_r = self.weight_r.detach()
+        return (
+            weight_d + self.V @ (weight_r - self.V.T @ weight_d)
+        ).reshape(self.out_features, self.in_features)

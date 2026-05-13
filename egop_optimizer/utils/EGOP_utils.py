@@ -10,6 +10,7 @@ from typing import Optional, Union, Tuple
 from egop_optimizer.utils.device_utils import get_available_device
 from egop_optimizer.models.reparam_layers.reparam_layers import (
     EGOP_linear_layer,
+    EGOP_auxiliary_variables_linear_layer,
     EGOP_conv2d_layer,
 )
 
@@ -18,7 +19,9 @@ import pdb
 
 # List of implemented EGOP layer classes
 # Needs to be a tuple for isinstance to work
-EGOP_LAYER_CLASSES = tuple([EGOP_linear_layer, EGOP_conv2d_layer])
+EGOP_LAYER_CLASSES = tuple(
+    [EGOP_linear_layer, EGOP_auxiliary_variables_linear_layer, EGOP_conv2d_layer]
+)
 
 """
 TODO: 
@@ -150,9 +153,10 @@ def compute_k_gradients_all_layers(
                 gradients_dict[name].permute(2, 1, 0).reshape(n_params_per_kernel, -1)
             )
         else:
-            gradients_dict[name] = gradients_dict[name].reshape(
-                gradients_dict[name].shape[1], -1
-            )
+            # (k, d) -> (d, k) via transpose, NOT reshape. reshape preserves
+            # row-major memory order and would scramble samples across params;
+            # we need an actual axis swap so columns are gradient samples.
+            gradients_dict[name] = gradients_dict[name].T.contiguous()
     return gradients_dict
 
 
@@ -225,8 +229,16 @@ def layerwise_reparam_init_equiv(
     OG_model: torch.nn.Module,
     seed: int = None,
 ) -> Tuple[torch.nn.Module, torch.nn.Module]:
+    """
+    Initializes a reparameterized (EGOP) model to be functionally equivalent to an original (OG) model.
 
-    # If we don't recieve a seed, we'll initialize OG model randomly.
+    Samples weights for the original model, then transforms and assigns those weights
+    to each EGOP layer using the stored eigenbasis V. Non-reparameterized layers are copied directly.
+
+    Supports: EGOP_linear_layer (full square V), EGOP_conv2d_layer (per-filter d x d V),
+    and EGOP_auxiliary_variables_linear_layer (d x r with auxiliary vars).
+    """
+    # If we don't receive a seed, we'll initialize OG model randomly.
     if seed is None:
         print("Initializing OG model randomly without set seed.")
         OG_model.reinitialize()
@@ -242,16 +254,14 @@ def layerwise_reparam_init_equiv(
 
     # Initialize using layer-by-layer V
     for name, module in EGOP_model.named_modules():
-        # If layer has a weight parameter,
-        if hasattr(module, "weight") and module.weight is not None:
+        is_auxiliary = isinstance(module, EGOP_auxiliary_variables_linear_layer)
+        has_weight = hasattr(module, "weight") and module.weight is not None
+
+        if has_weight or is_auxiliary:
             # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
             W = OG_model.get_submodule(name).weight.clone()
             # If reparameterized layer, copy and transform
             if isinstance(module, EGOP_LAYER_CLASSES):
-                """
-                Should check that this correctly detects EGOP layers
-                """
-                # pdb.set_trace()
                 if isinstance(module, EGOP_linear_layer):
                     V_inv = module.V_inv
                     #  If c = V.T x, then f(x) = tilde(f)(c) for reparam tilde(f)(c)= Vc
@@ -270,6 +280,22 @@ def layerwise_reparam_init_equiv(
                     w_flat = W.view(W.shape[0], -1)
                     W_prime = torch.einsum("ij,bj->bi", V.T, w_flat)
                     EGOP_init_state_dict[name + ".weight"] = W_prime.view_as(W)
+                elif isinstance(module, EGOP_auxiliary_variables_linear_layer):
+
+                    #   weight_r = V^T @ self.weight.flatten()
+                    #   weight_d = self.weight.flatten() - V @ weight_r
+                    V = module.V
+                    W_2d = (
+                        W
+                        if W.dim() == 2
+                        else W.view(module.out_features, module.in_features)
+                    )
+                    W_flat = W_2d.flatten().to(V.device)
+                    theta_r = torch.matmul(V.T, W_flat)
+                    theta_d = W_flat - torch.matmul(V, theta_r)
+                    EGOP_init_state_dict[name + ".weight"] = W_2d.clone()
+                    EGOP_init_state_dict[name + ".weight_r"] = theta_r
+                    EGOP_init_state_dict[name + ".weight_d"] = theta_d
                 else:
                     raise Exception("Unsupported reparameterized layer type.")
             # If not reparameterized, copy weight directly
@@ -280,13 +306,27 @@ def layerwise_reparam_init_equiv(
                 EGOP_init_state_dict[name + ".bias"] = OG_model.get_submodule(
                     name
                 ).bias.clone()
-    # Copy any buffers (e.g. BatchNorm running_mean/running_var) not covered above
+    # Copy any buffers (e.g. BatchNorm running_mean/running_var) not covered above.
+    # Only copy keys that EGOP_model actually has — auxiliary layers expose
+    # weight_r/weight_d instead of weight, so blindly copying OG's keys would
+    # inject an unexpected `fc1.weight` and break load_state_dict(strict=True).
+    EGOP_state_dict_keys = set(EGOP_model.state_dict().keys())
     for key, val in OG_model.state_dict().items():
-        if key not in EGOP_init_state_dict:
+        if key not in EGOP_init_state_dict and key in EGOP_state_dict_keys:
             EGOP_init_state_dict[key] = val.clone()
 
     # strict=True indicates we set ALL parameters using the provided state_dict
     EGOP_model.load_state_dict(EGOP_init_state_dict, strict=True)
+
+    # Trigger _post_weight_init_hook on layers that define it. For auxiliary layers
+    # this is idempotent (init_equiv already wrote consistent values), but it ensures
+    # both init_equiv and reinit_seeded paths follow the same conceptual flow:
+    #   "set self.weight (source of truth) → hook derives weight_d / weight_r"
+    # The hook is the single canonical place that defines the decomposition formula.
+    for module in EGOP_model.modules():
+        if hasattr(module, "_post_weight_init_hook"):
+            module._post_weight_init_hook()
+
     return OG_model, EGOP_model
 
 

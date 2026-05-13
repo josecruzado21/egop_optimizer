@@ -9,6 +9,7 @@ import math
 
 from egop_optimizer.models.reparam_layers.reparam_layers import (
     EGOP_linear_layer,
+    EGOP_auxiliary_variables_linear_layer,
     EGOP_conv2d_layer,
     ResBlock,
 )
@@ -50,7 +51,13 @@ def _sync_device_rng(device: torch.device, gen: torch.Generator):
             f"Seeded reinitialize is only implemented for cpu/cuda/mps, got device {device}."
         )
 
-REPARAM_LAYER_CLASSES = [EGOP_linear_layer, EGOP_conv2d_layer, ResBlock]
+
+REPARAM_LAYER_CLASSES = [
+    EGOP_linear_layer,
+    EGOP_auxiliary_variables_linear_layer,
+    EGOP_conv2d_layer,
+    ResBlock,
+]
 
 """
 TODO with ReparamBaseClassifier:
@@ -186,6 +193,13 @@ class BaseClassifier(nn.Module):
                     with _sync_device_rng(device, gen):
                         layer.reset_parameters()
 
+                # Give the layer a chance to sync any secondary parameters that
+                # depend on self.weight (e.g. EGOP_auxiliary_variables_linear_layer
+                # derives weight_d / weight_r from self.weight via V).
+                # Most layers don't define this method and silently skip.
+                if hasattr(layer, "_post_weight_init_hook"):
+                    layer._post_weight_init_hook()
+
 
 class ReparamBaseClassifier(BaseClassifier):
     def __init__(self, V_by_layer_dict, **kwargs):
@@ -196,7 +210,11 @@ class ReparamBaseClassifier(BaseClassifier):
         for idx in self.V_by_layer_dict.keys():
             self.V_by_layer_dict[idx] = self.V_by_layer_dict[idx].to(device)
         for _, module in self.named_modules():
-            if type(module) == EGOP_linear_layer:
+            if type(module) in (
+                EGOP_linear_layer,
+                EGOP_auxiliary_variables_linear_layer,
+                EGOP_conv2d_layer,
+            ):
                 module.V = module.V.to(device)
         return
 
