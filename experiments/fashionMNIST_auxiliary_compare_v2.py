@@ -170,9 +170,9 @@ def run_trial(
         LR_scheduler=None,
         valloader=valloader,
         device=DEVICE,
-        experiment_name=f"{EXPERIMENT_PREFIX}/og/trial_{seed}",
+        experiment_name=f"{EXPERIMENT_PREFIX}/rsvd_{rsvd_components}/og/trial_{seed}",
         report_validation_metrics=True,
-        checkpoint=True,
+        checkpoint=False,
         initial_metrics=True,
     )
 
@@ -193,9 +193,9 @@ def run_trial(
         LR_scheduler=None,
         valloader=valloader,
         device=DEVICE,
-        experiment_name=f"{EXPERIMENT_PREFIX}/aux_egop/trial_{seed}",
+        experiment_name=f"{EXPERIMENT_PREFIX}/rsvd_{rsvd_components}/aux_egop/trial_{seed}",
         report_validation_metrics=True,
-        checkpoint=True,
+        checkpoint=False,
         initial_metrics=True,
     )
 
@@ -270,8 +270,8 @@ def run_comparison_experiment(
     df = aggregate_trials(
         log_root=LOG_ROOT,
         model_subdirs={
-            "og": f"{EXPERIMENT_PREFIX}/og",
-            "aux_egop": f"{EXPERIMENT_PREFIX}/aux_egop",
+            "og": f"{EXPERIMENT_PREFIX}/rsvd_{rsvd_components}/og",
+            "aux_egop": f"{EXPERIMENT_PREFIX}/rsvd_{rsvd_components}/aux_egop",
         },
         trial_seeds=trial_seeds,
     )
