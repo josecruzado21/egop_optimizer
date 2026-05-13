@@ -1,3 +1,4 @@
+import os
 import torch
 import itertools
 from tqdm import tqdm
@@ -14,8 +15,6 @@ from egop_optimizer.models.reparam_layers.reparam_layers import (
     EGOP_conv2d_layer,
 )
 
-
-import pdb
 
 # List of implemented EGOP layer classes
 # Needs to be a tuple for isinstance to work
@@ -144,7 +143,20 @@ def compute_k_gradients_all_layers(
                 if name in original_weights:
                     module.weight.data = original_weights[name].clone()
 
-    # Stack gradients for each layer
+
+    # Diagnostic hook: set env var EGOP_SAVE_MATRICES_DIR=<path> to dump 3
+    # matrices per Linear layer during a real experiment run:
+    #   {name}_stacked.pt          -- raw (k, d) gradient stack (the shared input)
+    #   {name}_G_tensor.pt         -- stacked.reshape(d, -1)  
+    #   {name}_G_prime_tensor.pt   -- stacked.T.contiguous() 
+    # The function still returns whichever layout is wired into the live code
+    # path below; saving is purely additive and does not change training.
+    save_dir = os.environ.get("EGOP_SAVE_MATRICES_DIR")
+    if save_dir is not None:
+        from pathlib import Path
+        save_dir_path = Path(save_dir)
+        save_dir_path.mkdir(parents=True, exist_ok=True)
+
     for name in gradients_dict:
         gradients_dict[name] = torch.stack(gradients_dict[name], dim=0)
         if gradients_dict[name].dim() == 3:
@@ -153,23 +165,39 @@ def compute_k_gradients_all_layers(
                 gradients_dict[name].permute(2, 1, 0).reshape(n_params_per_kernel, -1)
             )
         else:
-            gradients_dict[name] = gradients_dict[name].reshape(
-                gradients_dict[name].shape[1], -1
-            )
+            # Linear path. Optionally dump the 3 diagnostic matrices BEFORE
+            # consuming `stacked` with the configured transformation.
+            if save_dir is not None:
+                stacked_view = gradients_dict[name]
+                d_layer = stacked_view.shape[1]
+                torch.save(
+                    stacked_view.clone(),
+                    save_dir_path / f"{name}_stacked.pt",
+                )
+                torch.save(
+                    stacked_view.reshape(d_layer, -1).clone(),
+                    save_dir_path / f"{name}_G_tensor.pt",
+                )
+                torch.save(
+                    stacked_view.T.contiguous(),
+                    save_dir_path / f"{name}_G_prime_tensor.pt",
+                )
+                print(
+                    f"[EGOP_SAVE_MATRICES] Saved stacked / G_tensor / "
+                    f"G_prime_tensor for layer '{name}' to {save_dir_path}"
+                )
+
+            # (k, d) -> (d, k) via transpose, NOT reshape.
+            gradients_dict[name] = gradients_dict[name].T.contiguous()
+
     return gradients_dict
 
 
 def count_params(model):
-    """Count weight elements of layers eligible for EGOP reparameterization.
+        # def count_params(model):
+        #     """Returns the total number of parameters in the model."""
+        #     return sum(p.numel() for p in model.parameters())
 
-    Used by compute_V_by_layer to derive k from EGOP_oversampling_factor:
-        k = int(EGOP_oversampling_factor * count_params(model))
-
-    Only nn.Conv2d and nn.Linear weights are counted (recursively, so layers
-    inside nested submodules like ResBlock are included). Bias parameters,
-    BatchNorm affine parameters, and any non-EGOP parameters (e.g. auxiliary
-    layer's weight_r / weight_d) are excluded — they should not influence k.
-    """
     num_params = 0
     for module in model.modules():
         if isinstance(module, (nn.Linear, nn.Conv2d)):

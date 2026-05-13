@@ -1,34 +1,3 @@
-"""
-Experiment v2: Original FashionMNIST classifier vs Auxiliary EGOP reparam.
-
-Aligned with the new repo's training conventions: each trial's training is
-done by `basic_train_loop`, which writes per-epoch metrics to
-  logs/{experiment_name}/training.log
-After all trials finish, the script parses those logs (no checkpoints, no
-modification of basic_train_loop) and produces an aggregated CSV plus a
-2x2 comparison plot.
-
-Per trial:
-  1. Build OG model (seed) + reinit_seeded
-  2. compute_V_by_layer with EGOP_oversampling_factor + RSVD
-  3. Build auxiliary reparam model (V_dict, seed)
-  4. layerwise_reparam_init_equiv(aux, OG, seed) — guarantees forward W ≈ W_OG at t=0
-  5. basic_train_loop on OG and aux separately (different log dirs)
-
-After all trials:
-  6. aggregate_trials reads each training.log, builds long-format DataFrame
-  7. save aggregated CSV
-  8. plot 2x2 grid (train/val × loss/acc), median + IQR shading
-
-Note: init metrics ("Initial Training Loss = ...") logged by basic_train_loop
-are NOT aggregated/plotted by design — they exist only in the per-trial log
-text files. Curves start from epoch 1.
-
-Usage:
-    python experiments/fashionMNIST_auxiliary_compare_v2.py \\
-        --rsvd_components 50 --epochs 30 --num_iterations 1
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -66,9 +35,7 @@ print(f"Using device: {DEVICE}")
 
 NUM_WORKERS = 0 if sys.platform == "win32" else 2
 
-# ============================================================================
-# Tuned hyperparameters (from old repo: reduced_and_auxiliary_example.py)
-# ============================================================================
+
 TUNED_HYPERPARAMS = {
     50: {
         "og": {"lr": 0.005, "wd": 0.1},
@@ -113,7 +80,7 @@ DEFAULT_CONFIG = {
     "num_classes": 10,
     "pool_factor": 1,
     "batch_size": 300,
-    "egop_factor": 0.1,
+    "egop_factor": 0.01,
     "weight_dist": "gaussian",
 }
 

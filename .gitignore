@@ -70,3 +70,10 @@ coverage.xml
 .DS_Store
 /new_egop_env
 /raw_data
+
+# Local-only diagnostic & legacy-compat work (don't ship to main)
+experiments/figures/
+experiments/diagnostics/
+experiments/legacy_compat/
+experiments/fashionMNIST_compare_legacy.py
+experiments/plot_legacy.py
