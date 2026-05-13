@@ -153,9 +153,10 @@ def compute_k_gradients_all_layers(
                 gradients_dict[name].permute(2, 1, 0).reshape(n_params_per_kernel, -1)
             )
         else:
-            gradients_dict[name] = gradients_dict[name].reshape(
-                gradients_dict[name].shape[1], -1
-            )
+            # (k, d) -> (d, k) via transpose, NOT reshape. reshape preserves
+            # row-major memory order and would scramble samples across params;
+            # we need an actual axis swap so columns are gradient samples.
+            gradients_dict[name] = gradients_dict[name].T.contiguous()
     return gradients_dict
 
 
