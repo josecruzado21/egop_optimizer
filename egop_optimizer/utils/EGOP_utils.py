@@ -165,27 +165,27 @@ def compute_k_gradients_all_layers(
                 gradients_dict[name].permute(2, 1, 0).reshape(n_params_per_kernel, -1)
             )
         else:
-            # Linear path. Optionally dump the 3 diagnostic matrices BEFORE
-            # consuming `stacked` with the configured transformation.
-            if save_dir is not None:
-                stacked_view = gradients_dict[name]
-                d_layer = stacked_view.shape[1]
-                torch.save(
-                    stacked_view.clone(),
-                    save_dir_path / f"{name}_stacked.pt",
-                )
-                torch.save(
-                    stacked_view.reshape(d_layer, -1).clone(),
-                    save_dir_path / f"{name}_G_tensor.pt",
-                )
-                torch.save(
-                    stacked_view.T.contiguous(),
-                    save_dir_path / f"{name}_G_prime_tensor.pt",
-                )
-                print(
-                    f"[EGOP_SAVE_MATRICES] Saved stacked / G_tensor / "
-                    f"G_prime_tensor for layer '{name}' to {save_dir_path}"
-                )
+            # # Linear path. Optionally dump the 3 diagnostic matrices BEFORE
+            # # consuming `stacked` with the configured transformation.
+            # if save_dir is not None:
+            #     stacked_view = gradients_dict[name]
+            #     d_layer = stacked_view.shape[1]
+            #     torch.save(
+            #         stacked_view.clone(),
+            #         save_dir_path / f"{name}_stacked.pt",
+            #     )
+            #     torch.save(
+            #         stacked_view.reshape(d_layer, -1).clone(),
+            #         save_dir_path / f"{name}_G_tensor.pt",
+            #     )
+            #     torch.save(
+            #         stacked_view.T.contiguous(),
+            #         save_dir_path / f"{name}_G_prime_tensor.pt",
+            #     )
+            #     print(
+            #         f"[EGOP_SAVE_MATRICES] Saved stacked / G_tensor / "
+            #         f"G_prime_tensor for layer '{name}' to {save_dir_path}"
+            #     )
 
             # (k, d) -> (d, k) via transpose, NOT reshape.
             gradients_dict[name] = gradients_dict[name].T.contiguous()
@@ -246,10 +246,19 @@ def compute_V_by_layer(
                 else:
                     grad = grad.to("cpu")
                 if isinstance(module, nn.Linear) and reparam_linear_layers:
+                    # Cap n_components at min(grad.shape, layer.weight.numel())
+                    # to match old repo behavior. svd_lowrank requires
+                    # q <= min(matrix dims); silently truncating mirrors
+                    # how old repo handled rsvd_components > k.
+                    effective_n = n_components
+                    if effective_n is not None:
+                        effective_n = min(
+                            effective_n, grad.shape[0], grad.shape[1], module.weight.numel()
+                        )
                     V_dict[name] = compute_V(
                         grad,
                         use_randomized_svd=use_randomized_svd,
-                        n_components=n_components,
+                        n_components=effective_n,
                     )
                 elif isinstance(module, nn.Conv2d):
                     V_dict[name] = compute_V(grad)
