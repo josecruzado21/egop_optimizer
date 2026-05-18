@@ -1,3 +1,4 @@
+import csv
 import os
 import torch
 import logging
@@ -197,6 +198,7 @@ def basic_train_loop(
         training_logger.error("Scheduler not yet supported.")
         raise Exception("Scheduler not yet supported.")
     # --- Initial metrics reporting ---
+    initial_train_loss = initial_train_acc = initial_val_loss = initial_val_acc = None
     if initial_metrics:
         # The reason why we have model.train() for the initial training metrics is to ensure that any 
         # layers that behave differently during training (like dropout or batch normalization) are in 
@@ -300,3 +302,33 @@ def basic_train_loop(
                     "val_times": val_times,
                 }
             )
+
+    csv_path = os.path.join(log_dir, "metrics.csv")
+    has_val = len(val_losses) > 0
+    fieldnames = ["experiment_id", "epoch", "train_loss", "train_accuracy", "train_time_min"]
+    if has_val:
+        fieldnames += ["val_loss", "val_accuracy", "val_time_min"]
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, restval="")
+        writer.writeheader()
+        if start_epoch == 1 and initial_train_loss is not None:
+            row0 = {"experiment_id": experiment_name, "epoch": 0, "train_loss": initial_train_loss, "train_accuracy": initial_train_acc, "train_time_min": ""}
+            if has_val and initial_val_loss is not None:
+                row0["val_loss"] = initial_val_loss
+                row0["val_accuracy"] = initial_val_acc
+                row0["val_time_min"] = ""
+            writer.writerow(row0)
+        for i in range(len(train_losses)):
+            row = {
+                "experiment_id": experiment_name,
+                "epoch": i + 1,
+                "train_loss": train_losses[i],
+                "train_accuracy": train_accuracies[i],
+                "train_time_min": train_times[i],
+            }
+            if has_val:
+                row["val_loss"] = val_losses[i]
+                row["val_accuracy"] = val_accuracies[i]
+                row["val_time_min"] = val_times[i]
+            writer.writerow(row)
+    training_logger.info(f"Metrics saved to {csv_path}")
