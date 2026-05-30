@@ -8,6 +8,7 @@ from tqdm.auto import tqdm
 import pdb
 
 from egop_optimizer.utils.device_utils import get_available_device
+from egop_optimizer.utils.EGOP_utils import compute_V_by_layer
 
 DEVICE = get_available_device()
 
@@ -32,6 +33,9 @@ def save_checkpoint(
     if metrics is not None:
         checkpoint.update(metrics)
 
+    if hasattr(model, "V_by_layer_dict"):
+        checkpoint["V_by_layer_dict"] = model.V_by_layer_dict
+
     torch.save(checkpoint, path)
 
 def load_checkpoint(model, optimizer, path, scheduler=None, device=DEVICE):
@@ -52,8 +56,9 @@ def load_checkpoint(model, optimizer, path, scheduler=None, device=DEVICE):
     val_losses = checkpoint.get("val_losses", [])
     val_accuracies = checkpoint.get("val_accuracies", [])
     val_times = checkpoint.get("val_times", [])
+    V_by_layer_dict = checkpoint.get("V_by_layer_dict", None)
 
-    return start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times
+    return start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times, V_by_layer_dict
 
 def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_crop=False):
     """
@@ -106,6 +111,10 @@ def basic_train_loop(
     report_validation_metrics = True,
     checkpoint = True,
     initial_metrics = True,
+    V_recalc_freq=None,
+    model_OG=None,
+    k=1000,
+    reparam_linear_layers=False,
 ):
     """
    Runs a basic training loop for a PyTorch model, with optional validation and logging.
@@ -180,14 +189,15 @@ def basic_train_loop(
     val_times = []
 
     if checkpoint and os.path.exists(latest_ckpt):
-        start_epoch, train_losses, train_times, train_accuracies, val_losses, val_accuracies, val_times = load_checkpoint(
+        start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times, ckpt_V_dict = load_checkpoint(
             model,
             optimizer,
             latest_ckpt,
             scheduler=LR_scheduler,
             device=device
         )
-
+        if ckpt_V_dict is not None and hasattr(model, "restore_V_from_dict"):
+            model.restore_V_from_dict(ckpt_V_dict)
         training_logger.info(f"Resuming training from epoch {start_epoch}")
 
     if device is not None:
@@ -285,6 +295,31 @@ def basic_train_loop(
                 f"Training Time = {train_duration:.2f}m"
             )
         
+
+        if (
+            V_recalc_freq is not None
+            and model_OG is not None
+            and hasattr(model, "update_reparam_weights")
+            and t % V_recalc_freq == 0
+        ):
+            training_logger.info(f"Epoch {t}: recomputing EGOP basis (V_recalc_freq={V_recalc_freq})...")
+            reparam_start = time.time()
+            V_prev_dict = {name: module.V.clone() for name, module in model.named_modules() if hasattr(module, "V")}
+            new_V_dict = compute_V_by_layer(
+                model_OG=model_OG,
+                k=k,
+                data_loader=trainloader,
+                criterion=loss_method(reduction="mean"),
+                device=device,
+                reparam_linear_layers=reparam_linear_layers,
+                recalculate_V=True,
+                current_model=model,
+            )
+            new_V_dict = {name: V.to(device) for name, V in new_V_dict.items()}
+            model.update_reparam_weights(V_prev_dict, new_V_dict)
+            model.zero_grad()
+            reparam_dur = round((time.time() - reparam_start) / 60, 2)
+            training_logger.info(f"Epoch {t}: basis updated in {reparam_dur:.2f}m")
 
         if checkpoint:
             save_checkpoint(
