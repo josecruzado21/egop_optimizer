@@ -54,10 +54,10 @@ if __name__ == "__main__":
     )
     V_dict = compute_V_by_layer(
         model_OG=OG_model,
-        k=100,
+        k=1000,
         data_loader=trainloader_for_V,
         criterion=torch.nn.CrossEntropyLoss(reduction="mean"),
-        reparam_linear_layers=False,
+        reparam_linear_layers=True,
     )
 
     reparam_model = ImageNet_model_34_layer_residual_reparam(V_by_layer_dict=V_dict).to(DEVICE)
@@ -66,6 +66,10 @@ if __name__ == "__main__":
     for seed in SEEDS:
         experiment_name = f"{BASE_EXPERIMENT}_seed{seed}"
         experiment_names.append(experiment_name)
+
+        if Path(f"logs/{experiment_name}/metrics.csv").exists():
+            print(f"Skipping {experiment_name} — metrics.csv already exists.")
+            continue
 
         # layerwise_reparam_init_equiv calls OG_model.reinitialize_seeded(seed) internally,
         # then transforms those weights into the reparam coordinate system —

@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
-from egop_optimizer.models.reparam_layers.reparam_layers import EGOP_conv2d_layer, ResBlock
+from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_conv2d_layer,
+    EGOP_auxiliary_variables_linear_layer,
+    ResBlock,
+)
 from egop_optimizer.models.BaseClassifier import BaseClassifier, ReparamBaseClassifier
 
 class ImageNet_model_34_layer_residual(BaseClassifier):
@@ -86,7 +90,11 @@ class ImageNet_model_34_layer_residual_reparam(ReparamBaseClassifier):
             ResBlock(512, 512, kernel_size=3, stride=1, V1=d["features5.2.conv1"], V2=d["features5.2.conv2"]),
         )
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.classifier = nn.Sequential(nn.Linear(512, num_classes))
+        self.classifier = nn.Sequential(
+            EGOP_auxiliary_variables_linear_layer(
+                V=d["classifier.0"], in_features=512, out_features=num_classes
+            )
+        )
 
     def forward(self, x):
         x = self.features1(x)

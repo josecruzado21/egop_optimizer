@@ -47,6 +47,10 @@ if __name__ == "__main__":
         experiment_name = f"{BASE_EXPERIMENT}_seed{seed}"
         experiment_names.append(experiment_name)
 
+        if Path(f"logs/{experiment_name}/metrics.csv").exists():
+            print(f"Skipping {experiment_name} — metrics.csv already exists.")
+            continue
+
         model.reinitialize_seeded(seed)
 
         trainloader, valloader, _ = CIFAR10_dataloader(

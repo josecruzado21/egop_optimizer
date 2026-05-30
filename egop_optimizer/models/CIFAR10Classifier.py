@@ -2,7 +2,11 @@ import torch
 import torch.nn as nn
 
 from egop_optimizer.models.BaseClassifier import BaseClassifier, ReparamBaseClassifier
-from egop_optimizer.models.reparam_layers.reparam_layers import EGOP_conv2d_layer, ResBlock
+from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_conv2d_layer,
+    EGOP_auxiliary_variables_linear_layer,
+    ResBlock,
+)
 
 
 class CIFAR10_model_34_layer_residual(BaseClassifier):
@@ -159,7 +163,11 @@ class CIFAR10_model_residual_reparam(ReparamBaseClassifier):
             ResBlock(64, 64, kernel_size=3, stride=1, V1=d["features4.1.conv1"], V2=d["features4.1.conv2"]),
         )
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.classifier = nn.Sequential(nn.Linear(64, num_classes, bias=False))
+        self.classifier = nn.Sequential(
+            EGOP_auxiliary_variables_linear_layer(
+                V=d["classifier.0"], in_features=64, out_features=num_classes, bias=False
+            )
+        )
 
     def forward(self, x):
         x = self.features1(x)
