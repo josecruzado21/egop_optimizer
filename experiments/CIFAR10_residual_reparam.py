@@ -52,6 +52,7 @@ if __name__ == "__main__":
         batch_size=128, data_dir=data_dir, dev_split=0.99, augment=True, seed=0
     )
     V_dict = compute_V_by_layer(
+        use_randomized_svd = True,
         model_OG=OG_model,
         k=100,
         data_loader=trainloader_for_V,
