@@ -92,7 +92,7 @@ class ImageNet_model_34_layer_residual_reparam(ReparamBaseClassifier):
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Sequential(
             EGOP_auxiliary_variables_linear_layer(
-                V=d["classifier.0"], in_features=512, out_features=num_classes
+                V=d["classifier.0"], in_features=512, out_features=num_classes, bias=True
             )
         )
 
