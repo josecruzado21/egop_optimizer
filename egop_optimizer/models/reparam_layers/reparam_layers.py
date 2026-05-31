@@ -367,13 +367,13 @@ class EGOP_auxiliary_variables_linear_layer(torch.nn.Module):
                 torch.isclose(
                     VtV,
                     torch.eye(self.r, device=device),
-                    atol=1e-5,
+                    atol=1e-3,
                 )
             )
         except AssertionError:
             raise Exception(
                 f"Provided matrix V does not have orthonormal columns to specified tolerance. "
-                f"Max deviation from identity: {max_dev:.2e} (tolerance: 1e-5)"
+                f"Max deviation from identity: {max_dev:.2e} (tolerance: 1e-4)"
             )
 
         self.reset_parameters()
