@@ -1,3 +1,4 @@
+import csv
 import os
 import torch
 import logging
@@ -7,6 +8,7 @@ from tqdm.auto import tqdm
 import pdb
 
 from egop_optimizer.utils.device_utils import get_available_device
+from egop_optimizer.utils.EGOP_utils import compute_V_by_layer
 
 DEVICE = get_available_device()
 
@@ -31,6 +33,9 @@ def save_checkpoint(
     if metrics is not None:
         checkpoint.update(metrics)
 
+    if hasattr(model, "V_by_layer_dict"):
+        checkpoint["V_by_layer_dict"] = model.V_by_layer_dict
+
     torch.save(checkpoint, path)
 
 def load_checkpoint(model, optimizer, path, scheduler=None, device=DEVICE):
@@ -51,8 +56,9 @@ def load_checkpoint(model, optimizer, path, scheduler=None, device=DEVICE):
     val_losses = checkpoint.get("val_losses", [])
     val_accuracies = checkpoint.get("val_accuracies", [])
     val_times = checkpoint.get("val_times", [])
+    V_by_layer_dict = checkpoint.get("V_by_layer_dict", None)
 
-    return start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times
+    return start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times, V_by_layer_dict
 
 def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_crop=False):
     """
@@ -105,6 +111,10 @@ def basic_train_loop(
     report_validation_metrics = True,
     checkpoint = True,
     initial_metrics = True,
+    V_recalc_freq=None,
+    model_OG=None,
+    k=1000,
+    reparam_linear_layers=False,
 ):
     """
    Runs a basic training loop for a PyTorch model, with optional validation and logging.
@@ -179,14 +189,15 @@ def basic_train_loop(
     val_times = []
 
     if checkpoint and os.path.exists(latest_ckpt):
-        start_epoch, train_losses, train_times, train_accuracies, val_losses, val_accuracies, val_times = load_checkpoint(
+        start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times, ckpt_V_dict = load_checkpoint(
             model,
             optimizer,
             latest_ckpt,
             scheduler=LR_scheduler,
             device=device
         )
-
+        if ckpt_V_dict is not None and hasattr(model, "restore_V_from_dict"):
+            model.restore_V_from_dict(ckpt_V_dict)
         training_logger.info(f"Resuming training from epoch {start_epoch}")
 
     if device is not None:
@@ -197,6 +208,7 @@ def basic_train_loop(
         training_logger.error("Scheduler not yet supported.")
         raise Exception("Scheduler not yet supported.")
     # --- Initial metrics reporting ---
+    initial_train_loss = initial_train_acc = initial_val_loss = initial_val_acc = None
     if initial_metrics:
         # The reason why we have model.train() for the initial training metrics is to ensure that any 
         # layers that behave differently during training (like dropout or batch normalization) are in 
@@ -284,6 +296,31 @@ def basic_train_loop(
             )
         
 
+        if (
+            V_recalc_freq is not None
+            and model_OG is not None
+            and hasattr(model, "update_reparam_weights")
+            and t % V_recalc_freq == 0
+        ):
+            training_logger.info(f"Epoch {t}: recomputing EGOP basis (V_recalc_freq={V_recalc_freq})...")
+            reparam_start = time.time()
+            V_prev_dict = {name: module.V.clone() for name, module in model.named_modules() if hasattr(module, "V")}
+            new_V_dict = compute_V_by_layer(
+                model_OG=model_OG,
+                k=k,
+                data_loader=trainloader,
+                criterion=loss_method(reduction="mean"),
+                device=device,
+                reparam_linear_layers=reparam_linear_layers,
+                recalculate_V=True,
+                current_model=model,
+            )
+            new_V_dict = {name: V.to(device) for name, V in new_V_dict.items()}
+            model.update_reparam_weights(V_prev_dict, new_V_dict)
+            model.zero_grad()
+            reparam_dur = round((time.time() - reparam_start) / 60, 2)
+            training_logger.info(f"Epoch {t}: basis updated in {reparam_dur:.2f}m")
+
         if checkpoint:
             save_checkpoint(
                 model,
@@ -300,3 +337,33 @@ def basic_train_loop(
                     "val_times": val_times,
                 }
             )
+
+    csv_path = os.path.join(log_dir, "metrics.csv")
+    has_val = len(val_losses) > 0
+    fieldnames = ["experiment_id", "epoch", "train_loss", "train_accuracy", "train_time_min"]
+    if has_val:
+        fieldnames += ["val_loss", "val_accuracy", "val_time_min"]
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, restval="")
+        writer.writeheader()
+        if start_epoch == 1 and initial_train_loss is not None:
+            row0 = {"experiment_id": experiment_name, "epoch": 0, "train_loss": initial_train_loss, "train_accuracy": initial_train_acc, "train_time_min": ""}
+            if has_val and initial_val_loss is not None:
+                row0["val_loss"] = initial_val_loss
+                row0["val_accuracy"] = initial_val_acc
+                row0["val_time_min"] = ""
+            writer.writerow(row0)
+        for i in range(len(train_losses)):
+            row = {
+                "experiment_id": experiment_name,
+                "epoch": i + 1,
+                "train_loss": train_losses[i],
+                "train_accuracy": train_accuracies[i],
+                "train_time_min": train_times[i],
+            }
+            if has_val:
+                row["val_loss"] = val_losses[i]
+                row["val_accuracy"] = val_accuracies[i]
+                row["val_time_min"] = val_times[i]
+            writer.writerow(row)
+    training_logger.info(f"Metrics saved to {csv_path}")
