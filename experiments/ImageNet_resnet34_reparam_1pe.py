@@ -3,13 +3,17 @@ import torch
 from pathlib import Path
 
 from egop_optimizer.engine.train import basic_train_loop
-from egop_optimizer.models.ImagenetClassifier import ImageNet_model_34_layer_residual
+from egop_optimizer.models.ImagenetClassifier import (
+    ImageNet_model_34_layer_residual,
+    ImageNet_model_34_layer_residual_reparam,
+)
 from egop_optimizer.dataloaders.ImageNet_dataloader import ImageNet_dataloader
+from egop_optimizer.utils.EGOP_utils import compute_V_by_layer, layerwise_reparam_init_equiv
 from egop_optimizer.utils.device_utils import get_available_device
 
 DEVICE = get_available_device()
 
-BASE_EXPERIMENT = "ImageNet_resnet34_OG"
+BASE_EXPERIMENT = "ImageNet_resnet34_reparam_1pe"
 SEEDS = [1, 2, 3, 4, 5]
 
 
@@ -36,13 +40,28 @@ def consolidate_metrics(experiment_names: list, output_path: Path):
 
 
 if __name__ == "__main__":
-    # ImageNet dataset path (cluster)
     data_dir = Path("/share/data/vdata/imagenet1k")
     loss_method = lambda reduction: torch.nn.CrossEntropyLoss(reduction=reduction)
     ten_crop = True
     epochs = 40
 
-    model = ImageNet_model_34_layer_residual().to(DEVICE)
+    OG_model = ImageNet_model_34_layer_residual().to(DEVICE)
+
+    # V is computed once — it defines the reparameterization basis, not the weights.
+    # A fixed dataloader seed is used so V is the same across all runs.
+    trainloader_for_V, _ = ImageNet_dataloader(
+        root=data_dir, batch_size=256, ten_crop=ten_crop, seed=0
+    )
+    V_dict = compute_V_by_layer(
+        use_randomized_svd = True,
+        model_OG=OG_model,
+        k=1000,
+        data_loader=trainloader_for_V,
+        criterion=torch.nn.CrossEntropyLoss(reduction="mean"),
+        reparam_linear_layers=True,
+    )
+
+    reparam_model = ImageNet_model_34_layer_residual_reparam(V_by_layer_dict=V_dict).to(DEVICE)
 
     experiment_names = []
     for seed in SEEDS:
@@ -53,15 +72,20 @@ if __name__ == "__main__":
             print(f"Skipping {experiment_name} — metrics.csv already exists.")
             continue
 
-        model.reinitialize_seeded(seed)
+        # layerwise_reparam_init_equiv calls OG_model.reinitialize_seeded(seed) internally,
+        # then transforms those weights into the reparam coordinate system —
+        # so the reparam model starts from an initialization equivalent to OG seed{seed}.
+        _, reparam_model = layerwise_reparam_init_equiv(
+            EGOP_model=reparam_model, OG_model=OG_model, seed=seed
+        )
 
         trainloader, valloader = ImageNet_dataloader(
             root=data_dir, batch_size=256, ten_crop=ten_crop, seed=seed
         )
-        optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.001)
+        optimizer = torch.optim.AdamW(reparam_model.parameters(), lr=0.001, weight_decay=0.001)
 
         basic_train_loop(
-            model=model,
+            model=reparam_model,
             trainloader=trainloader,
             optimizer=optimizer,
             loss_method=loss_method,
@@ -71,6 +95,10 @@ if __name__ == "__main__":
             experiment_name=experiment_name,
             ten_crop=ten_crop,
             report_validation_metrics=True,
+            V_recalc_freq=1,
+            model_OG=OG_model,
+            k=1000,
+            reparam_linear_layers=True,
         )
 
     consolidate_metrics(

@@ -165,31 +165,10 @@ def compute_k_gradients_all_layers(
                 gradients_dict[name].permute(2, 1, 0).reshape(n_params_per_kernel, -1)
             )
         else:
-            # # Linear path. Optionally dump the 3 diagnostic matrices BEFORE
-            # # consuming `stacked` with the configured transformation.
-            # if save_dir is not None:
-            #     stacked_view = gradients_dict[name]
-            #     d_layer = stacked_view.shape[1]
-            #     torch.save(
-            #         stacked_view.clone(),
-            #         save_dir_path / f"{name}_stacked.pt",
-            #     )
-            #     torch.save(
-            #         stacked_view.reshape(d_layer, -1).clone(),
-            #         save_dir_path / f"{name}_G_tensor.pt",
-            #     )
-            #     torch.save(
-            #         stacked_view.T.contiguous(),
-            #         save_dir_path / f"{name}_G_prime_tensor.pt",
-            #     )
-            #     print(
-            #         f"[EGOP_SAVE_MATRICES] Saved stacked / G_tensor / "
-            #         f"G_prime_tensor for layer '{name}' to {save_dir_path}"
-            #     )
-
-            # (k, d) -> (d, k) via transpose, NOT reshape.
+            # (k, d) -> (d, k) via transpose, NOT reshape. reshape preserves
+            # row-major memory order and would scramble samples across params;
+            # we need an actual axis swap so columns are gradient samples.
             gradients_dict[name] = gradients_dict[name].T.contiguous()
-
     return gradients_dict
 
 

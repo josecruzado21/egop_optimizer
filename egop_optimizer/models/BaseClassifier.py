@@ -218,6 +218,69 @@ class ReparamBaseClassifier(BaseClassifier):
                 module.V = module.V.to(device)
         return
 
+    def update_reparam_weights(self, V_prev_dict, V_new_dict):
+        """
+        Transitions all EGOP layers from V_prev to V_new basis.
+
+        For each layer in both dicts:
+          - Recovers the effective weight in original (un-reparameterized) coordinates
+            using V_prev.
+          - Projects it into the new reparameterized coordinates using V_new.T.
+          - Updates the layer's stored weight and its .V (and .V_inv for linear) in place.
+
+        The noise that diversifies the new V comes from the kaiming perturbations
+        applied inside compute_V_by_layer(recalculate_V=True) before this is called.
+        """
+        with torch.no_grad():
+            for name, module in self.named_modules():
+                if name not in V_prev_dict or name not in V_new_dict:
+                    continue
+                V_prev = V_prev_dict[name].to(module.weight.device)
+                V_new = V_new_dict[name].to(module.weight.device)
+                W = module.weight.data
+
+                if isinstance(module, EGOP_conv2d_layer):
+                    # W: [out_ch, in_ch, kH, kW]
+                    # Per filter b: W_eff[b] = V_prev @ W_stored[b]
+                    #               W_new_stored[b] = V_new.T @ W_eff[b]
+                    W_flat = W.view(W.shape[0], -1).unsqueeze(-1)       # [out_ch, D, 1]
+                    W_orig = torch.matmul(V_prev, W_flat).view_as(W)    # [out_ch, in_ch, kH, kW]
+                    W_new_stored = torch.matmul(
+                        V_new.T, W_orig.view(W.shape[0], -1).unsqueeze(-1)
+                    ).view_as(W)
+                    module.weight.data.copy_(W_new_stored)
+                    module.V = V_new
+
+                elif isinstance(module, EGOP_linear_layer):
+                    # W: [out_features, in_features], V: [D, D] where D = out*in
+                    # W_eff_flat = V_prev @ W_flat
+                    # W_new_flat = V_new.T @ W_eff_flat
+                    W_flat = W.flatten()
+                    W_orig_flat = torch.matmul(V_prev, W_flat)
+                    W_new_flat = torch.matmul(V_new.T, W_orig_flat)
+                    module.weight.data.copy_(W_new_flat.view_as(W))
+                    module.V = V_new
+                    module.V_inv = V_new.T
+
+        self.V_by_layer_dict = V_new_dict
+
+    def restore_V_from_dict(self, V_dict):
+        """
+        Restores .V (and .V_inv) on each EGOP layer from V_dict without touching weights.
+        Use after loading a checkpoint so that layer bases match what was saved.
+        """
+        with torch.no_grad():
+            for name, module in self.named_modules():
+                if name not in V_dict:
+                    continue
+                V = V_dict[name].to(module.weight.device)
+                if isinstance(module, EGOP_conv2d_layer):
+                    module.V = V
+                elif isinstance(module, EGOP_linear_layer):
+                    module.V = V
+                    module.V_inv = V.T
+        self.V_by_layer_dict = V_dict
+
 
 def centered_xavier_normal_(
     tensor: Tensor,
