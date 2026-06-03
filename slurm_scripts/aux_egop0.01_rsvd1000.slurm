@@ -11,7 +11,7 @@ conda activate egop_optimizer
 
 cd ~/Github/egop_optimizer/egop_optimizer
 
-stdbuf -o0 -e0 python experiments/fashionMNIST_auxiliary_compare_v2.py \
+stdbuf -o0 -e0 python experiments/fashionMNIST_auxiliary_compare.py \
     --rsvd_components 1000 \
     --egop_factor 0.01 \
     --num_iterations 50 \
