@@ -210,7 +210,7 @@ def run_comparison_experiment(
     plot_results: bool = True,
     show_plot: bool = True,
     verbose: bool = True,
-    csv_root: Path = Path("results/csv"),
+    csv_root: Path = Path("results/csv/FashionMNIST_aux"),
     figure_root: Path = Path("results/figures"),
 ) -> None:
     """Run multi-trial OG vs auxiliary EGOP comparison.

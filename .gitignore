@@ -74,5 +74,5 @@ coverage.xml
 # Experiment outputs (folders tracked via .gitkeep, contents ignored)
 results/figures/*
 !results/figures/.gitkeep
-results/csv/*
+# results/csv/*
 !results/csv/.gitkeep
