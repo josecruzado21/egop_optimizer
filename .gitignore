@@ -70,4 +70,10 @@ coverage.xml
 .DS_Store
 /new_egop_env
 /raw_data
+
+# Experiment outputs (folders tracked via .gitkeep, contents ignored)
+results/figures/*
+!results/figures/.gitkeep
+# results/csv/*
+!results/csv/.gitkeep
 *.pdf
