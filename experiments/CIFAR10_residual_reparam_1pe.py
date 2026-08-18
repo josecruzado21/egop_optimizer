@@ -53,6 +53,7 @@ if __name__ == "__main__":
     )
     V_dict = compute_V_by_layer(
         use_randomized_svd = True,
+        n_components=10,
         model_OG=OG_model,
         k=100,
         data_loader=trainloader_for_V,
@@ -97,6 +98,8 @@ if __name__ == "__main__":
             model_OG=OG_model,
             k=100,
             reparam_linear_layers=True,
+            use_randomized_svd=True,
+            n_components=10,
         )
 
     consolidate_metrics(

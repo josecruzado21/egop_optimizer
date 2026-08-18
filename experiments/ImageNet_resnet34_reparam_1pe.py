@@ -50,10 +50,11 @@ if __name__ == "__main__":
     # V is computed once — it defines the reparameterization basis, not the weights.
     # A fixed dataloader seed is used so V is the same across all runs.
     trainloader_for_V, _ = ImageNet_dataloader(
-        root=data_dir, batch_size=256, ten_crop=ten_crop, seed=0
+        root=data_dir, batch_size=128, ten_crop=ten_crop, seed=0
     )
     V_dict = compute_V_by_layer(
         use_randomized_svd = True,
+        n_components=10,
         model_OG=OG_model,
         k=1000,
         data_loader=trainloader_for_V,
@@ -80,7 +81,7 @@ if __name__ == "__main__":
         )
 
         trainloader, valloader = ImageNet_dataloader(
-            root=data_dir, batch_size=256, ten_crop=ten_crop, seed=seed
+            root=data_dir, batch_size=128, ten_crop=ten_crop, seed=seed
         )
         optimizer = torch.optim.AdamW(reparam_model.parameters(), lr=0.001, weight_decay=0.001)
 
@@ -99,6 +100,8 @@ if __name__ == "__main__":
             model_OG=OG_model,
             k=1000,
             reparam_linear_layers=True,
+            use_randomized_svd=True,
+            n_components=10,
         )
 
     consolidate_metrics(

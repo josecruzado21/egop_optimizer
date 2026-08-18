@@ -115,6 +115,8 @@ def basic_train_loop(
     model_OG=None,
     k=1000,
     reparam_linear_layers=False,
+    use_randomized_svd=True,
+    n_components=None,
 ):
     """
    Runs a basic training loop for a PyTorch model, with optional validation and logging.
@@ -314,6 +316,8 @@ def basic_train_loop(
                 reparam_linear_layers=reparam_linear_layers,
                 recalculate_V=True,
                 current_model=model,
+                use_randomized_svd=use_randomized_svd,
+                n_components=n_components,
             )
             new_V_dict = {name: V.to(device) for name, V in new_V_dict.items()}
             model.update_reparam_weights(V_prev_dict, new_V_dict)
