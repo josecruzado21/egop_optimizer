@@ -115,6 +115,8 @@ def basic_train_loop(
     model_OG=None,
     k=1000,
     reparam_linear_layers=False,
+    use_randomized_svd=True,
+    n_components=None,
 ):
     """
    Runs a basic training loop for a PyTorch model, with optional validation and logging.
@@ -268,7 +270,7 @@ def basic_train_loop(
             correct_train += (predicted == batch_labels).sum().item()
             total_train += batch_labels.size(0)
         train_end = time.time()
-        train_duration = round((train_end - train_start)/60, 2)
+        train_duration = round(train_end - train_start, 2)  # seconds
         epoch_loss /= len(trainloader.dataset)
         train_acc = correct_train / total_train
         train_losses.append(epoch_loss)
@@ -282,17 +284,17 @@ def basic_train_loop(
             val_losses.append(epoch_val_loss)
             val_accuracies.append(val_acc)
             val_end = time.time()
-            val_duration = round((val_end - val_start)/60, 2)
+            val_duration = round(val_end - val_start, 2)  # seconds
             val_times.append(val_duration)
             training_logger.info(
                 f"Epoch {t}: Training Loss = {epoch_loss:.10f}, Validation Loss = {epoch_val_loss:.10f}, "
                 f"Training Acc. = {train_acc:.10f}, Validation Acc. = {val_acc:.10f}, "
-                f"Training Time = {train_duration:.2f}m, Validation Time = {val_duration:.2f}m"
+                f"Training Time = {train_duration:.2f}s, Validation Time = {val_duration:.2f}s"
             )
         else:
             training_logger.info(
                 f"Epoch {t}: Training Loss = {epoch_loss:.10f}, Training Acc. = {train_acc:.10f}, "
-                f"Training Time = {train_duration:.2f}m"
+                f"Training Time = {train_duration:.2f}s"
             )
         
 
@@ -314,6 +316,8 @@ def basic_train_loop(
                 reparam_linear_layers=reparam_linear_layers,
                 recalculate_V=True,
                 current_model=model,
+                use_randomized_svd=use_randomized_svd,
+                n_components=n_components,
             )
             new_V_dict = {name: V.to(device) for name, V in new_V_dict.items()}
             model.update_reparam_weights(V_prev_dict, new_V_dict)

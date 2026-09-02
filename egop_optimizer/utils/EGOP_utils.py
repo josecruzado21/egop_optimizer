@@ -1,3 +1,4 @@
+import os
 import torch
 import itertools
 from tqdm import tqdm
@@ -14,8 +15,6 @@ from egop_optimizer.models.reparam_layers.reparam_layers import (
     EGOP_conv2d_layer,
 )
 
-
-import pdb
 
 # List of implemented EGOP layer classes
 # Needs to be a tuple for isinstance to work
@@ -144,7 +143,20 @@ def compute_k_gradients_all_layers(
                 if name in original_weights:
                     module.weight.data = original_weights[name].clone()
 
-    # Stack gradients for each layer
+
+    # Diagnostic hook: set env var EGOP_SAVE_MATRICES_DIR=<path> to dump 3
+    # matrices per Linear layer during a real experiment run:
+    #   {name}_stacked.pt          -- raw (k, d) gradient stack (the shared input)
+    #   {name}_G_tensor.pt         -- stacked.reshape(d, -1)  
+    #   {name}_G_prime_tensor.pt   -- stacked.T.contiguous() 
+    # The function still returns whichever layout is wired into the live code
+    # path below; saving is purely additive and does not change training.
+    save_dir = os.environ.get("EGOP_SAVE_MATRICES_DIR")
+    if save_dir is not None:
+        from pathlib import Path
+        save_dir_path = Path(save_dir)
+        save_dir_path.mkdir(parents=True, exist_ok=True)
+
     for name in gradients_dict:
         gradients_dict[name] = torch.stack(gradients_dict[name], dim=0)
         if gradients_dict[name].dim() == 3:
@@ -161,8 +173,15 @@ def compute_k_gradients_all_layers(
 
 
 def count_params(model):
-    """Returns the total number of parameters in the model."""
-    return sum(p.numel() for p in model.parameters())
+        # def count_params(model):
+        #     """Returns the total number of parameters in the model."""
+        #     return sum(p.numel() for p in model.parameters())
+
+    num_params = 0
+    for module in model.modules():
+        if isinstance(module, (nn.Linear, nn.Conv2d)):
+            num_params += module.weight.numel()
+    return num_params
 
 
 def compute_V_by_layer(
@@ -206,10 +225,19 @@ def compute_V_by_layer(
                 else:
                     grad = grad.to("cpu")
                 if isinstance(module, nn.Linear) and reparam_linear_layers:
+                    # Cap n_components at min(grad.shape, layer.weight.numel())
+                    # to match old repo behavior. svd_lowrank requires
+                    # q <= min(matrix dims); silently truncating mirrors
+                    # how old repo handled rsvd_components > k.
+                    effective_n = n_components
+                    if effective_n is not None:
+                        effective_n = min(
+                            effective_n, grad.shape[0], grad.shape[1], module.weight.numel()
+                        )
                     V_dict[name] = compute_V(
                         grad,
                         use_randomized_svd=use_randomized_svd,
-                        n_components=n_components,
+                        n_components=effective_n,
                     )
                 elif isinstance(module, nn.Conv2d):
                     V_dict[name] = compute_V(grad)
