@@ -40,7 +40,7 @@ if __name__ == "__main__":
     data_dir = Path("/share/data/vdata/imagenet1k")
     loss_method = lambda reduction: torch.nn.CrossEntropyLoss(reduction=reduction)
     ten_crop = True
-    epochs = 100
+    epochs = 40
     batch_size = 128
 
     model = ImageNet_model_34_layer_residual().to(DEVICE)

@@ -56,9 +56,9 @@ if __name__ == "__main__":
         model.reinitialize_seeded(seed)
 
         trainloader, valloader = ImageNet_dataloader(
-            root=data_dir, batch_size=256, ten_crop=ten_crop, seed=seed
+            root=data_dir, batch_size=128, ten_crop=ten_crop, seed=seed
         )
-        optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.001)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=0.0001)
 
         basic_train_loop(
             model=model,
