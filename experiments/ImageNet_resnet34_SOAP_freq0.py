@@ -10,7 +10,7 @@ from egop_optimizer.utils.device_utils import get_available_device
 
 DEVICE = get_available_device()
 
-BASE_EXPERIMENT = "ImageNet_resnet34_SOAP"
+BASE_EXPERIMENT = "ImageNet_resnet34_SOAP_freq0"
 SEEDS = [1, 2, 3, 4, 5]
 
 

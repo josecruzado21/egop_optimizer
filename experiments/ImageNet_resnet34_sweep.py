@@ -9,7 +9,7 @@ from egop_optimizer.utils.device_utils import get_available_device
 DEVICE = get_available_device()
 
 LR_VALUES = [0.01, 0.001, 0.0001, 0.00001, 0.000001]
-WD_VALUES = [0.01]
+WD_VALUES = [0.1, 0.01, 0.001, 0.0001]
 TOTAL_EPOCHS = 10
 
 
@@ -34,7 +34,7 @@ def is_done(experiment_name):
 if __name__ == "__main__":
     ten_crop = True
     data_dir = Path("/share/data/vdata/imagenet1k")
-    trainloader, valloader = ImageNet_dataloader(root=data_dir, batch_size=256, ten_crop=ten_crop)
+    trainloader, valloader = ImageNet_dataloader(root=data_dir, batch_size=128, ten_crop=ten_crop)
     loss_method = lambda reduction: torch.nn.CrossEntropyLoss(reduction=reduction)
 
     for lr in LR_VALUES:
@@ -64,6 +64,7 @@ if __name__ == "__main__":
                 experiment_name=exp_name,
                 ten_crop=ten_crop,
                 report_validation_metrics=True,
+                initial_metrics=False,
             )
 
             print(f"[sweep] DONE {exp_name}")
