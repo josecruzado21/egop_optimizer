@@ -64,7 +64,7 @@ class TestBasic(unittest.TestCase):
         Test a forward map and backprop, without running a whole basic_train_loop
         """
         train_loader, _, _ = load_cifar_debugging_subset()
-        model = TinyCifarClassifier()
+        model = TinyCifarClassifier().to(device)
         optimizer = torch.optim.SGD(model.parameters(), lr=0.1)
         ave_loss_fn = torch.nn.CrossEntropyLoss(reduction="mean")
 

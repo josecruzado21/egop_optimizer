@@ -3,10 +3,69 @@ import torch.nn as nn
 from torch import Tensor
 from torch.nn.init import _calculate_fan_in_and_fan_out
 from typing import Optional, Union, Tuple
+from contextlib import contextmanager
 import math
 
+
+from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_linear_layer,
+    EGOP_auxiliary_variables_linear_layer,
+    EGOP_conv2d_layer,
+    ResBlock,
+)
+
+
+@contextmanager
+def _sync_device_rng(device: torch.device, gen: torch.Generator):
+    # Swap the device's global RNG state with `gen`'s state so that init ops
+    # which don't accept a generator (e.g. nn.Module.reset_parameters) draw
+    # deterministically from our tracked stream. Write the advanced state back
+    # into `gen` on exit and restore the device's prior global state so we don't
+    # perturb other code sharing the same device RNG.
+    if device.type == "cuda":
+        saved = torch.cuda.get_rng_state(device)
+        torch.cuda.set_rng_state(gen.get_state(), device)
+        try:
+            yield
+        finally:
+            gen.set_state(torch.cuda.get_rng_state(device))
+            torch.cuda.set_rng_state(saved, device)
+    elif device.type == "mps":
+        saved = torch.mps.get_rng_state()
+        torch.mps.set_rng_state(gen.get_state())
+        try:
+            yield
+        finally:
+            gen.set_state(torch.mps.get_rng_state())
+            torch.mps.set_rng_state(saved)
+    elif device.type == "cpu":
+        saved = torch.get_rng_state()
+        torch.set_rng_state(gen.get_state())
+        try:
+            yield
+        finally:
+            gen.set_state(torch.get_rng_state())
+            torch.set_rng_state(saved)
+    else:
+        raise NotImplementedError(
+            f"Seeded reinitialize is only implemented for cpu/cuda/mps, got device {device}."
+        )
+
+
+REPARAM_LAYER_CLASSES = [
+    EGOP_linear_layer,
+    EGOP_auxiliary_variables_linear_layer,
+    EGOP_conv2d_layer,
+    ResBlock,
+]
+
 """
-TODO:
+TODO with ReparamBaseClassifier:
+-
+"""
+
+"""
+TODO with BaseClassifier:
 X Unify logic for initializing random parameters
 X Reinitialize and reinitialize_seeded(accepts explicit random seed)
 
@@ -29,13 +88,29 @@ class BaseClassifier(nn.Module):
         super().__init__()
         # weight_dist options: "default", "xavier_normal", "gaussian", "kaiming_normal"
         self.weight_dist = weight_dist
-        self._gen = torch.Generator()
-        if seed is not None:
-            self._gen.manual_seed(seed)
+        self._seed = seed
+        # Lazy per-device generators so seeded init is deterministic on cpu/mps/cuda.
+        # A plain torch.Generator() lives on CPU and can't seed init ops run on
+        # device weights, so we key generators by (device_type, device_index).
+        self._gens: dict = {}
+
+    def _generator_for(self, device: torch.device) -> torch.Generator:
+        key = (device.type, device.index)
+        gen = self._gens.get(key)
+        if gen is None:
+            gen = torch.Generator(device=device)
+            if self._seed is not None:
+                gen.manual_seed(self._seed)
+            self._gens[key] = gen
+        return gen
 
     def reinitialize_seeded(self, seed, **kwargs):
-        # reset random number generator
-        self._gen.manual_seed(seed)
+        # Reset all known per-device generators to the same seed and remember it
+        # so generators created later (e.g. if a layer moves to a new device)
+        # start from the same seed.
+        self._seed = seed
+        for gen in self._gens.values():
+            gen.manual_seed(seed)
 
         # then initialize params
         self.reinitialize(**kwargs)
@@ -72,38 +147,139 @@ class BaseClassifier(nn.Module):
                 mean = 0.0
 
         for layer in self.modules():
-            if isinstance(layer, (nn.Conv2d, nn.Linear)):
+            # If layer has a weight parameter,
+            if hasattr(layer, "weight") and layer.weight is not None:
                 if verbose:
                     print(f"Initializing layer with {self.weight_dist} distribution")
+
+                device = layer.weight.device
+                gen = self._generator_for(device)
+
+                # 1D weights belong to normalization layers (BatchNorm/LayerNorm
+                # affine scales). Kaiming/Xavier need >=2D, and a Gaussian draw
+                # would clobber the unit-scale init those layers expect, so defer
+                # to the layer's own reset_parameters for any weight_dist.
+                if layer.weight.dim() < 2:
+                    with _sync_device_rng(device, gen):
+                        layer.reset_parameters()
+                    continue
 
                 if self.weight_dist == "gaussian":
                     # Gaussian IID initialization
                     with torch.no_grad():
-                        layer.weight.normal_(mean=mean, std=sampling_scale, generator=self._gen)
+                        layer.weight.normal_(
+                            mean=mean, std=sampling_scale, generator=gen
+                        )
                 elif self.weight_dist == "xavier_normal" and isinstance(
                     layer, torch.nn.modules.linear.Linear
                 ):
                     centered_xavier_normal_(
-                        layer.weight, mean=torch.zeros_like(layer.weight), generator=self._gen
+                        layer.weight,
+                        mean=torch.zeros_like(layer.weight),
+                        generator=gen,
                     )
                 elif self.weight_dist == "kaiming_normal":
-                    with torch.random.fork_rng(enabled=True):
-                        torch.set_rng_state(self._gen.get_state())
-                        if hasattr(layer, 'weight') and layer.weight is not None:
-                            nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
-                        if hasattr(layer, 'bias') and layer.bias is not None:
-                            nn.init.constant_(layer.bias, 0)
-                        self._gen.set_state(torch.get_rng_state())
+                    nn.init.kaiming_normal_(
+                        layer.weight,
+                        mode="fan_in",
+                        nonlinearity="relu",
+                        generator=gen,
+                    )
+                    if hasattr(layer, "bias") and layer.bias is not None:
+                        nn.init.constant_(layer.bias, 0)
                 else:
-                    layer.reset_parameters()
-                    # Adela note: I don't know what the below code is doing? Resetting again and getting the random state?
-                    with torch.random.fork_rng(enabled=True):
-                        torch.set_rng_state(self._gen.get_state())
+                    # reset_parameters() doesn't accept a generator, so temporarily
+                    # drive the device's global RNG from our tracked generator.
+                    with _sync_device_rng(device, gen):
                         layer.reset_parameters()
-                        self._gen.set_state(torch.get_rng_state())
+
+                # Give the layer a chance to sync any secondary parameters that
+                # depend on self.weight (e.g. EGOP_auxiliary_variables_linear_layer
+                # derives weight_d / weight_r from self.weight via V).
+                # Most layers don't define this method and silently skip.
+                if hasattr(layer, "_post_weight_init_hook"):
+                    layer._post_weight_init_hook()
 
 
+class ReparamBaseClassifier(BaseClassifier):
+    def __init__(self, V_by_layer_dict, **kwargs):
+        super().__init__(**kwargs)
+        self.V_by_layer_dict = V_by_layer_dict
 
+    def move_bases_to_device(self, device):
+        for idx in self.V_by_layer_dict.keys():
+            self.V_by_layer_dict[idx] = self.V_by_layer_dict[idx].to(device)
+        for _, module in self.named_modules():
+            if type(module) in (
+                EGOP_linear_layer,
+                EGOP_auxiliary_variables_linear_layer,
+                EGOP_conv2d_layer,
+            ):
+                module.V = module.V.to(device)
+        return
+
+    def update_reparam_weights(self, V_prev_dict, V_new_dict):
+        """
+        Transitions all EGOP layers from V_prev to V_new basis.
+
+        For each layer in both dicts:
+          - Recovers the effective weight in original (un-reparameterized) coordinates
+            using V_prev.
+          - Projects it into the new reparameterized coordinates using V_new.T.
+          - Updates the layer's stored weight and its .V (and .V_inv for linear) in place.
+
+        The noise that diversifies the new V comes from the kaiming perturbations
+        applied inside compute_V_by_layer(recalculate_V=True) before this is called.
+        """
+        with torch.no_grad():
+            for name, module in self.named_modules():
+                if name not in V_prev_dict or name not in V_new_dict:
+                    continue
+                V_prev = V_prev_dict[name].to(module.weight.device)
+                V_new = V_new_dict[name].to(module.weight.device)
+                W = module.weight.data
+
+                if isinstance(module, EGOP_conv2d_layer):
+                    # W: [out_ch, in_ch, kH, kW]
+                    # Per filter b: W_eff[b] = V_prev @ W_stored[b]
+                    #               W_new_stored[b] = V_new.T @ W_eff[b]
+                    W_flat = W.view(W.shape[0], -1).unsqueeze(-1)       # [out_ch, D, 1]
+                    W_orig = torch.matmul(V_prev, W_flat).view_as(W)    # [out_ch, in_ch, kH, kW]
+                    W_new_stored = torch.matmul(
+                        V_new.T, W_orig.view(W.shape[0], -1).unsqueeze(-1)
+                    ).view_as(W)
+                    module.weight.data.copy_(W_new_stored)
+                    module.V = V_new
+
+                elif isinstance(module, EGOP_linear_layer):
+                    # W: [out_features, in_features], V: [D, D] where D = out*in
+                    # W_eff_flat = V_prev @ W_flat
+                    # W_new_flat = V_new.T @ W_eff_flat
+                    W_flat = W.flatten()
+                    W_orig_flat = torch.matmul(V_prev, W_flat)
+                    W_new_flat = torch.matmul(V_new.T, W_orig_flat)
+                    module.weight.data.copy_(W_new_flat.view_as(W))
+                    module.V = V_new
+                    module.V_inv = V_new.T
+
+        self.V_by_layer_dict = V_new_dict
+
+    def restore_V_from_dict(self, V_dict):
+        """
+        Restores .V (and .V_inv) on each EGOP layer from V_dict without touching weights.
+        Use after loading a checkpoint so that layer bases match what was saved.
+        """
+        with torch.no_grad():
+            for name, module in self.named_modules():
+                if name not in V_dict:
+                    continue
+                V = V_dict[name].to(module.weight.device)
+                if isinstance(module, EGOP_conv2d_layer):
+                    module.V = V
+                elif isinstance(module, EGOP_linear_layer):
+                    module.V = V
+                    module.V_inv = V.T
+        self.V_by_layer_dict = V_dict
 
 
 def centered_xavier_normal_(

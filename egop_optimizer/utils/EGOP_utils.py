@@ -1,0 +1,378 @@
+import os
+import torch
+import itertools
+from tqdm import tqdm
+import torch.nn as nn
+import time
+import math
+
+from typing import Optional, Union, Tuple
+
+from egop_optimizer.utils.device_utils import get_available_device
+from egop_optimizer.models.reparam_layers.reparam_layers import (
+    EGOP_linear_layer,
+    EGOP_auxiliary_variables_linear_layer,
+    EGOP_conv2d_layer,
+)
+
+
+# List of implemented EGOP layer classes
+# Needs to be a tuple for isinstance to work
+EGOP_LAYER_CLASSES = tuple(
+    [EGOP_linear_layer, EGOP_auxiliary_variables_linear_layer, EGOP_conv2d_layer]
+)
+
+"""
+TODO: 
+- CNN logic
+- auxilliary logic
+"""
+
+
+DEVICE = get_available_device()
+
+
+def compute_V(gradients, use_randomized_svd=False, n_components=None):
+    """
+    Computes the EGOP eigenbasis based on tensor of gradients
+
+    Args:
+        gradients (torch.Tensor): Input tensor of shape (num_params, num_samples)
+        use_randomized_svd (bool): Whether to use svd_lowrank
+        n_components (int): Estimated rank of grad matrix for svd_lowrank
+
+    Returns:
+        torch.Tensor: U and orthonormal matrix of shape (num_params, q) for q <= num_params
+    """
+    if use_randomized_svd:
+        if n_components is None:
+            # otherwise default = 6, which can lead to overly low-rank approximations
+            n_components = min(list(gradients.shape))
+        U, _, _ = torch.svd_lowrank(gradients, q=n_components)
+    else:
+        U, S, V = torch.svd(gradients, some=False, compute_uv=True)
+        U, S, V = U.cpu(), S.cpu(), V.cpu()
+    return U
+
+
+def compute_k_gradients_all_layers(
+    model_OG,
+    data_loader,
+    k,
+    device,
+    criterion,
+    recalculate_V=False,
+    current_model=None,
+    reparam_linear_layers=False,
+):
+    print("-" * 100)
+    print("Computing V by layer:")
+    print("-" * 100)
+    infinite_loader = itertools.cycle(data_loader)
+    print("Finished preparing infinite loader")
+    current_model = current_model.to(device) if current_model is not None else None
+    model_OG = model_OG.to(device)
+    if recalculate_V:
+        current_state_dict = {
+            k: (
+                module.recover_original_weights().detach().clone()
+                if hasattr(module, "recover_original_weights")
+                else v.detach().clone()
+            )
+            for k, v in current_model.state_dict().items()
+            for name, module in current_model.named_modules()
+            if name in k and k in model_OG.state_dict()
+        }
+        model_OG.load_state_dict(current_state_dict, strict=False)
+        model_OG.zero_grad()
+        original_weights = {
+            name: module.weight.data.clone()
+            for name, module in model_OG.named_modules()
+            if hasattr(module, "weight")
+            and (module.weight is not None)
+            and (isinstance(module, (nn.Conv2d, nn.Linear)))
+        }
+        del current_state_dict
+    # Max number of out channels in the network
+    # TODO: What's the correct way to set k if we have both conv/res blocks AND linear layers?
+    min_out_channels = float("inf")
+    for name, module in model_OG.named_modules():
+        if isinstance(module, nn.Conv2d):
+            min_out_channels = min(min_out_channels, module.out_channels)
+    if min_out_channels == float("inf"):
+        # If no convolutional layers, just use k as provided
+        pass
+    else:
+        k = math.ceil(k / min_out_channels)
+    gradients_dict = {}
+    print("using k =", k, "for all layers")
+    for _ in tqdm(range(k), leave=False):
+        if recalculate_V:
+            for name, module in model_OG.named_modules():
+                if name in original_weights:
+                    perturbation = torch.empty_like(module.weight)
+                    torch.nn.init.kaiming_normal_(
+                        perturbation, mode="fan_in", nonlinearity="relu"
+                    )
+                    module.weight.data += perturbation
+        else:
+            model_OG.reinitialize()
+        model_OG.zero_grad()
+        x, y = next(infinite_loader)
+        x = x.to(device)
+        y = y.to(device)
+        output = model_OG(x)
+        loss = criterion(output, y)
+        loss.backward()
+
+        for name, module in model_OG.named_modules():
+            if hasattr(module, "weight") and (module.weight.grad is not None):
+                if (isinstance(module, nn.Linear)) and (reparam_linear_layers):
+                    grad = module.weight.grad.detach().clone()
+                    if name not in gradients_dict:
+                        gradients_dict[name] = []
+                    gradients_dict[name].append(grad.flatten())
+                elif isinstance(module, nn.Conv2d):
+                    grad = module.weight.grad.detach().clone()
+                    n_filters = module.weight.shape[0]
+                    grad = grad.view(n_filters, -1)
+                    if name not in gradients_dict:
+                        gradients_dict[name] = []
+                    gradients_dict[name].append(grad)
+            if recalculate_V:
+                if name in original_weights:
+                    module.weight.data = original_weights[name].clone()
+
+
+    # Diagnostic hook: set env var EGOP_SAVE_MATRICES_DIR=<path> to dump 3
+    # matrices per Linear layer during a real experiment run:
+    #   {name}_stacked.pt          -- raw (k, d) gradient stack (the shared input)
+    #   {name}_G_tensor.pt         -- stacked.reshape(d, -1)  
+    #   {name}_G_prime_tensor.pt   -- stacked.T.contiguous() 
+    # The function still returns whichever layout is wired into the live code
+    # path below; saving is purely additive and does not change training.
+    save_dir = os.environ.get("EGOP_SAVE_MATRICES_DIR")
+    if save_dir is not None:
+        from pathlib import Path
+        save_dir_path = Path(save_dir)
+        save_dir_path.mkdir(parents=True, exist_ok=True)
+
+    for name in gradients_dict:
+        gradients_dict[name] = torch.stack(gradients_dict[name], dim=0)
+        if gradients_dict[name].dim() == 3:
+            n_params_per_kernel = gradients_dict[name].shape[2]
+            gradients_dict[name] = (
+                gradients_dict[name].permute(2, 1, 0).reshape(n_params_per_kernel, -1)
+            )
+        else:
+            # (k, d) -> (d, k) via transpose, NOT reshape. reshape preserves
+            # row-major memory order and would scramble samples across params;
+            # we need an actual axis swap so columns are gradient samples.
+            gradients_dict[name] = gradients_dict[name].T.contiguous()
+    return gradients_dict
+
+
+def count_params(model):
+        # def count_params(model):
+        #     """Returns the total number of parameters in the model."""
+        #     return sum(p.numel() for p in model.parameters())
+
+    num_params = 0
+    for module in model.modules():
+        if isinstance(module, (nn.Linear, nn.Conv2d)):
+            num_params += module.weight.numel()
+    return num_params
+
+
+def compute_V_by_layer(
+    model_OG,
+    k=None,
+    data_loader=None,
+    criterion=None,
+    device=DEVICE,
+    reparam_linear_layers=True,
+    use_randomized_svd=False,
+    n_components=None,
+    recalculate_V=False,
+    current_model=None,
+    per_layer=False,
+    EGOP_oversampling_factor=None,
+):
+    if k is None and EGOP_oversampling_factor is not None:
+        k = int(EGOP_oversampling_factor * count_params(model_OG))
+    elif k is None:
+        raise ValueError("Must provide either k or EGOP_oversampling_factor.")
+    if per_layer:
+        raise Exception("Option per_layer not yet supported.")
+    else:
+        beg = time.time()
+        gradients = compute_k_gradients_all_layers(
+            model_OG=model_OG,
+            data_loader=data_loader,
+            k=k,
+            device=device,
+            recalculate_V=recalculate_V,
+            current_model=current_model,
+            reparam_linear_layers=reparam_linear_layers,
+            criterion=criterion,
+        )
+        V_dict = {}
+        for name, module in model_OG.named_modules():
+            if name in gradients:
+                grad = gradients[name]
+                if device == "cuda":
+                    grad = grad.to(device)
+                else:
+                    grad = grad.to("cpu")
+                if isinstance(module, nn.Linear) and reparam_linear_layers:
+                    # Cap n_components at min(grad.shape, layer.weight.numel())
+                    # to match old repo behavior. svd_lowrank requires
+                    # q <= min(matrix dims); silently truncating mirrors
+                    # how old repo handled rsvd_components > k.
+                    effective_n = n_components
+                    if effective_n is not None:
+                        effective_n = min(
+                            effective_n, grad.shape[0], grad.shape[1], module.weight.numel()
+                        )
+                    V_dict[name] = compute_V(
+                        grad,
+                        use_randomized_svd=use_randomized_svd,
+                        n_components=effective_n,
+                    )
+                elif isinstance(module, nn.Conv2d):
+                    V_dict[name] = compute_V(grad)
+        end = time.time()
+        print()
+        print(
+            "Total time to compute V by layer (all layers together): {:.2f}".format(
+                end - beg
+            )
+        )
+        print()
+        return V_dict
+
+
+def layerwise_reparam_init_equiv(
+    EGOP_model: torch.nn.Module,
+    OG_model: torch.nn.Module,
+    seed: int = None,
+) -> Tuple[torch.nn.Module, torch.nn.Module]:
+    """
+    Initializes a reparameterized (EGOP) model to be functionally equivalent to an original (OG) model.
+
+    Samples weights for the original model, then transforms and assigns those weights
+    to each EGOP layer using the stored eigenbasis V. Non-reparameterized layers are copied directly.
+
+    Supports: EGOP_linear_layer (full square V), EGOP_conv2d_layer (per-filter d x d V),
+    and EGOP_auxiliary_variables_linear_layer (d x r with auxiliary vars).
+    """
+    # If we don't receive a seed, we'll initialize OG model randomly.
+    if seed is None:
+        print("Initializing OG model randomly without set seed.")
+        OG_model.reinitialize()
+    else:
+        OG_model.reinitialize_seeded(seed=seed)
+
+    # Check that EGOP_model and OG_model have the same list of named_modules.
+    # If they do not, this function will raise an exception.
+    check_model_structure(EGOP_model, OG_model)
+
+    # Create new state_dict for EGOP model
+    EGOP_init_state_dict = {}
+
+    # Initialize using layer-by-layer V
+    for name, module in EGOP_model.named_modules():
+        is_auxiliary = isinstance(module, EGOP_auxiliary_variables_linear_layer)
+        has_weight = hasattr(module, "weight") and module.weight is not None
+
+        if has_weight or is_auxiliary:
+            # Get a copy of the parameter tensor in original coordinates. Note that modifications to W will not modify parameters in OG
+            W = OG_model.get_submodule(name).weight.clone()
+            # If reparameterized layer, copy and transform
+            if isinstance(module, EGOP_LAYER_CLASSES):
+                if isinstance(module, EGOP_linear_layer):
+                    V_inv = module.V_inv
+                    #  If c = V.T x, then f(x) = tilde(f)(c) for reparam tilde(f)(c)= Vc
+                    W_prime = torch.reshape(
+                        torch.matmul(V_inv, W.flatten()),
+                        shape=(
+                            module.out_features,
+                            module.in_features,
+                        ),
+                    )
+                    EGOP_init_state_dict[name + ".weight"] = W_prime
+                elif isinstance(module, EGOP_conv2d_layer):
+                    # forward computes W_new[b] = V @ W_stored[b] per filter,
+                    # so W_stored[b] = V.T @ W_OG[b] to initialize equivalently.
+                    V = module.V.to(W.device)
+                    w_flat = W.view(W.shape[0], -1)
+                    W_prime = torch.einsum("ij,bj->bi", V.T, w_flat)
+                    EGOP_init_state_dict[name + ".weight"] = W_prime.view_as(W)
+                elif isinstance(module, EGOP_auxiliary_variables_linear_layer):
+
+                    #   weight_r = V^T @ self.weight.flatten()
+                    #   weight_d = self.weight.flatten() - V @ weight_r
+                    V = module.V
+                    W_2d = (
+                        W
+                        if W.dim() == 2
+                        else W.view(module.out_features, module.in_features)
+                    )
+                    W_flat = W_2d.flatten().to(V.device)
+                    theta_r = torch.matmul(V.T, W_flat)
+                    theta_d = W_flat - torch.matmul(V, theta_r)
+                    EGOP_init_state_dict[name + ".weight"] = W_2d.clone()
+                    EGOP_init_state_dict[name + ".weight_r"] = theta_r
+                    EGOP_init_state_dict[name + ".weight_d"] = theta_d
+                else:
+                    raise Exception("Unsupported reparameterized layer type.")
+            # If not reparameterized, copy weight directly
+            else:
+                EGOP_init_state_dict[name + ".weight"] = W
+            # Bias is identical/not reparameterized.
+            if OG_model.get_submodule(name).bias is not None:
+                EGOP_init_state_dict[name + ".bias"] = OG_model.get_submodule(
+                    name
+                ).bias.clone()
+    # Copy any buffers (e.g. BatchNorm running_mean/running_var) not covered above.
+    # Only copy keys that EGOP_model actually has — auxiliary layers expose
+    # weight_r/weight_d instead of weight, so blindly copying OG's keys would
+    # inject an unexpected `fc1.weight` and break load_state_dict(strict=True).
+    EGOP_state_dict_keys = set(EGOP_model.state_dict().keys())
+    for key, val in OG_model.state_dict().items():
+        if key not in EGOP_init_state_dict and key in EGOP_state_dict_keys:
+            EGOP_init_state_dict[key] = val.clone()
+
+    # strict=True indicates we set ALL parameters using the provided state_dict
+    EGOP_model.load_state_dict(EGOP_init_state_dict, strict=True)
+
+    # Trigger _post_weight_init_hook on layers that define it. For auxiliary layers
+    # this is idempotent (init_equiv already wrote consistent values), but it ensures
+    # both init_equiv and reinit_seeded paths follow the same conceptual flow:
+    #   "set self.weight (source of truth) → hook derives weight_d / weight_r"
+    # The hook is the single canonical place that defines the decomposition formula.
+    for module in EGOP_model.modules():
+        if hasattr(module, "_post_weight_init_hook"):
+            module._post_weight_init_hook()
+
+    return OG_model, EGOP_model
+
+
+def check_model_structure(model_1, model_2):
+    """
+    Checks if module_1 and module_2 have compatible sets of named_modules and parameters.
+    If they do not, raises an exception.
+
+    Order of modules matters in the recursive traversal.
+    """
+    names_1 = [n for n, _ in model_1.named_modules()]
+    names_2 = [n for n, _ in model_2.named_modules()]
+
+    # If the list of names is not identical, raise an error
+    if names_1 != names_2:
+        print("Module name mismatch:")
+        print("     model_1:", names_1)
+        print("     model_2:", names_2)
+        raise Exception("Provided models do not have equivalent sets of named modules.")
+    # Otherwise we're fine
+    return True

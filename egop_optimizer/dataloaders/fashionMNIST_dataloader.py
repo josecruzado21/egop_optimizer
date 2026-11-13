@@ -140,7 +140,9 @@ def fashionMNIST_cached_dataloader(
         dev_idx, test_idx = stratified_split(test_labels, dev_split, seed)
     else:
         num_dev = int(dev_split * len(test_labels))
-        all_idx = list(range(len(test_labels)))
+        all_idx = np.arange(len(test_labels))
+        rng = np.random.default_rng(seed=seed)
+        rng.shuffle(all_idx)
         dev_idx = all_idx[:num_dev]
         test_idx = all_idx[num_dev:]
 
@@ -248,10 +250,11 @@ def fashionMNIST_uncached_dataloader(
         test_fmnist = torch.utils.data.Subset(test_fmnist, test_indices)
     else:
         num_dev = int(dev_split * len(test_fmnist))
-        dev_fmnist = torch.utils.data.Subset(test_fmnist, list(range(0, num_dev)))
-        test_fmnist = torch.utils.data.Subset(
-            test_fmnist, list(range(num_dev, len(test_fmnist)))
-        )
+        all_idx = np.arange(len(test_fmnist))
+        rng = np.random.default_rng(seed=seed)
+        rng.shuffle(all_idx)
+        dev_fmnist = torch.utils.data.Subset(test_fmnist, all_idx[:num_dev].tolist())
+        test_fmnist = torch.utils.data.Subset(test_fmnist, all_idx[num_dev:].tolist())
 
     return train_fmnist, dev_fmnist, test_fmnist
 
