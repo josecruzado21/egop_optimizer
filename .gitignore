@@ -77,3 +77,4 @@ results/figures/*
 # results/csv/*
 !results/csv/.gitkeep
 *.pdf
+/experiments/figures
