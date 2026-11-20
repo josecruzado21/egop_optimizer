@@ -7,11 +7,9 @@ from datetime import datetime
 import pdb
 
 BASE_DIR = Path(__file__).resolve().parent
-OG_LOG_DIR = BASE_DIR / "logs" / "tinyMNIST_OG"
-REPARAM_LOG_DIR = BASE_DIR.parent / "logs" / "tinyMNIST_reparam"
 
-# OG_LOG_DIR = Path(__file__).resolve().parent / "logs" / "tinyMNIST_OG"
-# REPARAM_LOG_DIR = Path(__file__).resolve().parent / "logs" / "tinyMNIST_reparam"
+OG_LOG_DIR = Path(__file__).resolve().parent / "logs" / "tinyMNIST_OG"
+REPARAM_LOG_DIR = Path(__file__).resolve().parent / "logs" / "tinyMNIST_reparam"
 
 SOLVER_STYLE = {
     "Adam": {"color": "blue", "label": "Adam"},

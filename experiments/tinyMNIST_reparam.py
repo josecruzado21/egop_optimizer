@@ -1,5 +1,7 @@
 import torch
 import numpy as np
+import os
+from pathlib import Path
 
 from egop_optimizer.engine.train import basic_train_loop
 from egop_optimizer.models.TinyMNISTClassifier import (
@@ -78,6 +80,9 @@ def get_V_dict_for_TinyMNIST(OG_model, use_randomized_svd):
 
 
 if __name__ == "__main__":
+    # Change working directory to experiments/
+    os.chdir(Path(__file__).resolve().parent)
+
     loss_method = lambda reduction: torch.nn.CrossEntropyLoss(reduction=reduction)
 
     trainloader, valloader, testloader = tinyMNIST_dataloader(

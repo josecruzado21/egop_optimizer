@@ -1,10 +1,11 @@
 import torch
 import numpy as np
+import os
+from pathlib import Path
 
 from egop_optimizer.engine.train import basic_train_loop
 from egop_optimizer.models.TinyMNISTClassifier import TinyMNISTClassifier
 from egop_optimizer.dataloaders.tinyMNIST_dataloader import tinyMNIST_dataloader
-
 
 # ── Experiment configuration ──────────────────────────────────────────
 # Optimizers and their "OG" (original / best-known) learning rates
@@ -55,6 +56,9 @@ def make_optimizer(solver_name, parameters, lr):
 
 
 if __name__ == "__main__":
+    # Change working directory to experiments/
+    os.chdir(Path(__file__).resolve().parent)
+
     loss_method = lambda reduction: torch.nn.CrossEntropyLoss(reduction=reduction)
 
     trainloader, valloader, testloader = tinyMNIST_dataloader(
@@ -66,9 +70,7 @@ if __name__ == "__main__":
         lr = OG_LR[solver_name]
         for trial in range(num_trials):
             seed = trial
-            experiment_name = (
-                f"tinyMNIST_OG/{solver_name}/LR_{lr}/trial_{trial}"
-            )
+            experiment_name = f"tinyMNIST_OG/{solver_name}/LR_{lr}/trial_{trial}"
 
             model = TinyMNISTClassifier(
                 input_size=input_size,
