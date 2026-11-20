@@ -163,17 +163,6 @@ def plot_validation_accuracy(log_dir=None, save_path=None, reparam_log_dir=None)
 
 
 if __name__ == "__main__":
-
-    print(f"Reparam log directory: {REPARAM_LOG_DIR}")
-    print(f"Directory exists: {REPARAM_LOG_DIR.exists()}")
-
-    for solver_name in SOLVER_STYLE:
-        trials = collect_solver_data(solver_name, REPARAM_LOG_DIR)
-        print(
-            f"{solver_name}: {len(trials)} trials, "
-            f"epoch counts: {[len(t['epoch']) for t in trials]}"
-        )
-
     date_str = datetime.now().strftime("%b-%d-%Y")
     save_dir = Path(__file__).resolve().parent / "figures" / date_str
     save_dir.mkdir(parents=True, exist_ok=True)
