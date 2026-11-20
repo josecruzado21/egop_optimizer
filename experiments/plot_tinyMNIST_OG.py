@@ -3,15 +3,15 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-
+from datetime import datetime
 
 LOG_DIR = Path(__file__).resolve().parent / "logs" / "tinyMNIST_OG"
 
 SOLVER_STYLE = {
-    "Adam":           {"color": "blue",  "label": "Adam"},
-    "Adagrad":        {"color": "red",   "label": "Adagrad"},
-    "GD":             {"color": "green", "label": "SGD"},
-    "GD_w_momentum":  {"color": "cyan",  "label": "SGD with Momentum"},
+    "Adam": {"color": "blue", "label": "Adam"},
+    "Adagrad": {"color": "red", "label": "Adagrad"},
+    "GD": {"color": "green", "label": "SGD"},
+    "GD_w_momentum": {"color": "cyan", "label": "SGD with Momentum"},
 }
 
 # Regex to extract epoch metrics from a training.log line
@@ -84,7 +84,9 @@ def plot_training_loss(log_dir=None, save_path=None):
         if not trials:
             continue
         epochs, median, q25, q75 = compute_median_and_iqr(trials, "train_loss")
-        ax.plot(epochs, median, color=style["color"], label=style["label"], linewidth=1.5)
+        ax.plot(
+            epochs, median, color=style["color"], label=style["label"], linewidth=1.5
+        )
         ax.fill_between(epochs, q25, q75, color=style["color"], alpha=0.15)
 
     ax.set_yscale("log")
@@ -116,7 +118,9 @@ def plot_validation_accuracy(log_dir=None, save_path=None):
         if not trials:
             continue
         epochs, median, q25, q75 = compute_median_and_iqr(trials, "val_acc")
-        ax.plot(epochs, median, color=style["color"], label=style["label"], linewidth=1.5)
+        ax.plot(
+            epochs, median, color=style["color"], label=style["label"], linewidth=1.5
+        )
         ax.fill_between(epochs, q25, q75, color=style["color"], alpha=0.15)
 
     ax.set_xlabel("Epochs")
@@ -134,4 +138,10 @@ def plot_validation_accuracy(log_dir=None, save_path=None):
 
 
 if __name__ == "__main__":
-    plot_training_loss()
+    date_str = datetime.now().strftime("%b-%d-%Y")
+    save_dir = Path(__file__).resolve().parent / "figures" / date_str
+    save_dir.mkdir(parents=True, exist_ok=True)
+    plot_training_loss(save_path=save_dir / "tinyMNIST_OG_training_loss.pdf")
+    plot_validation_accuracy(
+        save_path=save_dir / "tinyMNIST_OG_validation_accuracy.pdf"
+    )

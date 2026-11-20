@@ -36,6 +36,10 @@ class TinyMNISTClassifier(BaseClassifier):
             None: Constructs fully connected layers and output layer.
         """
         super().__init__(seed=seed)
+        self.input_size = input_size
+        self.hidden_sizes = hidden_sizes
+        self.num_classes = num_classes
+        self.bias = bias
         self.flatten = nn.Flatten()
 
         # Dynamically create fully connected layers
@@ -69,6 +73,23 @@ class TinyMNISTClassifier(BaseClassifier):
                 x = F.relu(x)
         return x
 
+    def count_parameters(self):
+        """
+        Computes the total number of parameters in a fully connected MLP.
+
+        Args:
+            None
+
+        Returns:
+            int: Total number of parameters, including biases if self.bias is True.
+        """
+        layer_sizes = [self.input_size] + self.hidden_sizes + [self.num_classes]
+
+        return sum(
+            (in_features + int(self.bias)) * out_features
+            for in_features, out_features in zip(layer_sizes[:-1], layer_sizes[1:])
+        )
+
 
 class ReparamTinyMNISTClassifier(ReparamBaseClassifier):
     def __init__(
@@ -81,6 +102,10 @@ class ReparamTinyMNISTClassifier(ReparamBaseClassifier):
         bias=True,
     ):
         super().__init__(V_by_layer_dict=V_by_layer_dict, seed=seed)
+        self.input_size = input_size
+        self.hidden_sizes = hidden_sizes
+        self.num_classes = num_classes
+        self.bias = bias
         self.flatten = nn.Flatten()
 
         # Dynamically create fully connected layers

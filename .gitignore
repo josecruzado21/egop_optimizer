@@ -78,3 +78,4 @@ results/figures/*
 !results/csv/.gitkeep
 *.pdf
 /experiments/figures
+TODO.txt
