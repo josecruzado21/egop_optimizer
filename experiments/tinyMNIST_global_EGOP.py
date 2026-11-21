@@ -35,9 +35,9 @@ else:
     plt.rcParams["font.family"] = "serif"
 mpl.rcParams["mathtext.fontset"] = "cm"
 ## ========================================
-AXIS_LABEL_FONTSIZE = 30
-TICK_FONTSIZE = 30
-INSET_FONTSIZE = 25
+AXIS_LABEL_FONTSIZE = 36
+TICK_FONTSIZE = 36
+INSET_FONTSIZE = 30
 MARKERSIZE = 8.0
 INSET_X_PADDING = 1.0
 INSET_Y_PADDING = 0.02
@@ -49,8 +49,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 # ── User-editable settings ────────────────────────────────────────────────
 NUM_SAMPLES = 20000  # Number of independent model initializations / gradient draws
-CHUNK_SIZE = 2000  # Number of gradient samples accumulated per matrix multiply
+CHUNK_SIZE = 5000  # Number of gradient samples accumulated per matrix multiply
 FULL_BATCH_GRADIENTS = True  # True: gradient over entire training split per draw
+GAUSSIAN_VARIANCE = 1.0  # Isotropic N(0, variance * I) parameter samples
 BATCH_SIZE = (
     300  # Examples per gradient in mini-batch mode; memory chunk in full-batch mode
 )
@@ -137,6 +138,7 @@ def estimate_global_egop(
     device: torch.device | str,
     include_biases: bool = True,
     full_batch_gradients: bool = FULL_BATCH_GRADIENTS,
+    gaussian_variance: float = GAUSSIAN_VARIANCE,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[dict]]:
     """Compute the global EGOP and return (Lambda, V, EGOP, slices).
 
@@ -158,6 +160,8 @@ def estimate_global_egop(
         raise ValueError("num_samples must be positive")
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
+    if not np.isfinite(gaussian_variance) or gaussian_variance <= 0:
+        raise ValueError("gaussian_variance must be positive and finite")
     if not hasattr(model, "reinitialize"):
         raise TypeError("Expected the OG model to provide its reinitialize() method")
 
@@ -186,7 +190,7 @@ def estimate_global_egop(
     )
     for sample_idx in tqdm(range(num_samples), desc="Global EGOP gradients"):
         # Match the existing EGOP utility: fresh weights for every draw.
-        model.reinitialize()
+        model.reinitialize(sampling_scale=gaussian_variance**0.5)
         model.zero_grad(set_to_none=True)
 
         if full_batch_gradients:
@@ -535,9 +539,12 @@ def main() -> None:
         raise ValueError("BATCH_SIZE must be positive")
     if CHUNK_SIZE < 1:
         raise ValueError("CHUNK_SIZE must be positive")
+    if not np.isfinite(GAUSSIAN_VARIANCE) or GAUSSIAN_VARIANCE <= 0:
+        raise ValueError("GAUSSIAN_VARIANCE must be positive and finite")
 
     mode = "all_params" if INCLUDE_BIASES else "weights_only"
     run_name = f"samples_{NUM_SAMPLES}_batch_{BATCH_SIZE}_seed_{SEED}_{mode}"
+    run_name += f"_gaussian_var_{GAUSSIAN_VARIANCE:g}"
     if FULL_BATCH_GRADIENTS:
         run_name += (
             "_full_batch"  # Keep separate from previously saved mini-batch EGOPs.
@@ -578,6 +585,7 @@ def main() -> None:
             hidden_sizes=HIDDEN_SIZES,
             num_classes=NUM_CLASSES,
             seed=SEED,
+            weight_dist="gaussian",
         )
         device = get_available_device()
         print(f"Computing global EGOP on {device}; dense eigendecomposition on CPU")
@@ -593,6 +601,7 @@ def main() -> None:
             device=device,
             include_biases=INCLUDE_BIASES,
             full_batch_gradients=FULL_BATCH_GRADIENTS,
+            gaussian_variance=GAUSSIAN_VARIANCE,
         )
         print("Numerical rank:", torch.linalg.matrix_rank(EGOP))
         beta, ipr_normalized = eigenvector_diagnostics(V)
@@ -608,6 +617,8 @@ def main() -> None:
                 "chunk_size": CHUNK_SIZE,
                 "batch_size": BATCH_SIZE,
                 "full_batch_gradients": FULL_BATCH_GRADIENTS,
+                "parameter_distribution": "isotropic_gaussian",
+                "gaussian_variance": GAUSSIAN_VARIANCE,
                 "seed": SEED,
                 "data_split_seed": DATA_SPLIT_SEED,
                 "include_biases": INCLUDE_BIASES,
