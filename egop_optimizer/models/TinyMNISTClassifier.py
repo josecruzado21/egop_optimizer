@@ -22,7 +22,13 @@ class TinyMNISTClassifier(BaseClassifier):
     """
 
     def __init__(
-        self, input_size=64, hidden_sizes=[32, 16], num_classes=10, bias=True, seed=None
+        self,
+        input_size=64,
+        hidden_sizes=[32, 16],
+        num_classes=10,
+        bias=True,
+        seed=None,
+        weight_dist="default",
     ):
         """
         Initializes the tinyMNIST classifier architecture.
@@ -35,7 +41,7 @@ class TinyMNISTClassifier(BaseClassifier):
         Returns:
             None: Constructs fully connected layers and output layer.
         """
-        super().__init__(seed=seed)
+        super().__init__(seed=seed, weight_dist=weight_dist)
         self.input_size = input_size
         self.hidden_sizes = hidden_sizes
         self.num_classes = num_classes

@@ -165,11 +165,15 @@ class BaseClassifier(nn.Module):
                     continue
 
                 if self.weight_dist == "gaussian":
-                    # Gaussian IID initialization
+                    # Gaussian IID initialization of weights and biases.
                     with torch.no_grad():
                         layer.weight.normal_(
                             mean=mean, std=sampling_scale, generator=gen
                         )
+                        if hasattr(layer, "bias") and layer.bias is not None:
+                            layer.bias.normal_(
+                                mean=mean, std=sampling_scale, generator=gen
+                            )
                 elif self.weight_dist == "xavier_normal" and isinstance(
                     layer, torch.nn.modules.linear.Linear
                 ):
