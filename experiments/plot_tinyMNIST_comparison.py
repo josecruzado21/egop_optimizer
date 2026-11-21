@@ -2,7 +2,9 @@ import re
 from pathlib import Path
 
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as font_manager
 from datetime import datetime
 import pdb
 

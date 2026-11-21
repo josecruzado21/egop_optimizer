@@ -9,18 +9,36 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")  # Save figures on local machines and headless clusters.
+mpl.use("Agg")  # Save figures on local machines and headless clusters.
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as font_manager
 import numpy as np
+
+import pdb
+
+## ========================================
+# Set up CMU Serif fonts in matplotlib
+# SPECIFIC TO ADELA'S COMPUTER. Sorry everyone else.
+# You can delete this block without any impact other than choice of font family for plots.
+font_path = "/Users/adeladepavia/Library/Fonts/cmunrm.ttf"
+font_manager.fontManager.addfont(font_path)
+prop = font_manager.FontProperties(fname=font_path)
+plt.rcParams["font.family"] = "serif"
+plt.rcParams["font.serif"] = prop.get_name()
+mpl.rcParams["mathtext.fontset"] = "cm"
+## ========================================
+AXIS_LABEL_FONTSIZE = 25
+LEGEND_FONTSIZE = 17
+TICK_FONTSIZE = 20
 
 # This script is intended to live alongside tinyMNIST_OG.py in experiments/.
 EXPERIMENTS_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = EXPERIMENTS_DIR.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-LOG_ROOT = EXPERIMENTS_DIR / "logs" / "tinyMNIST_batch_ablation"
+LOG_ROOT = EXPERIMENTS_DIR / "logs" / "tinyMNIST_OG_batch_ablation_merged"
 DATE_STR = datetime.now().strftime("%b-%d-%Y")
 FIGURE_DIR = EXPERIMENTS_DIR / "figures" / DATE_STR
 
@@ -32,12 +50,12 @@ BATCH_SIZES = (30, 100, 300, 1000)
 # TODO: Replace the current defaults with the winning values from the
 # original-coordinate LR sweeps. Both OG and reparam use the same selected LR.
 LR_BY_BATCH_SIZE = {
-    30: {"Adam": 0.02, "Adagrad": 0.04},
-    100: {"Adam": 0.02, "Adagrad": 0.04},
+    30: {"Adam": 0.002, "Adagrad": 0.02},
+    100: {"Adam": 0.01, "Adagrad": 0.02},
     300: {"Adam": 0.02, "Adagrad": 0.04},
     1000: {"Adam": 0.02, "Adagrad": 0.04},
 }
-SEEDS = tuple(range(1000, 1005))  # Five trials: 1000, ..., 1004.
+SEEDS = tuple(range(1010, 1019))  # Nine trials
 EPOCHS = 200
 
 TRAIN_VAL_TEST_SPLIT = [None, 0.33, 0.66]
@@ -260,12 +278,17 @@ def run_experiments(overwrite=False):
 
 
 def collect_trials(batch_size, coordinate, solver):
-    """Load the available repetitions for one (batch, coordinate, solver)."""
+    """Collect all completed trials found in the log directory."""
+    lr = LR_BY_BATCH_SIZE[batch_size][solver]
+
+    trial_root = LOG_ROOT / f"batch_{batch_size}" / coordinate / solver / f"LR_{lr}"
+
     trials = []
-    for seed in SEEDS:
-        data = parse_training_log(log_path(batch_size, coordinate, solver, seed))
-        if len(data["epoch"]) > 0:
-            trials.append(data)
+    for trial_dir in sorted(trial_root.glob("trial_*")):
+        log_file = trial_dir / "training.log"
+        if is_complete(log_file):
+            trials.append(parse_training_log(log_file))
+
     return trials
 
 
@@ -276,9 +299,13 @@ def plot_metric(metric, ylabel, filename, *, log_scale=False):
     found_data = False
 
     for ax, batch_size in zip(axes, BATCH_SIZES):
-        ax.set_title(f"Batch size = {batch_size}")
+        ax.set_title(f"Batch size = {batch_size}", fontsize=AXIS_LABEL_FONTSIZE)
         for solver in SOLVERS:
             for coordinate, (coord_label, linestyle) in COORDINATE_STYLE.items():
+                if coord_label == "OG":
+                    legend_label = "Original coordinates"
+                elif coord_label == "reparameterized":
+                    legend_label = "Reparameterized"
                 trials = collect_trials(batch_size, coordinate, solver)
                 if not trials:
                     continue
@@ -295,7 +322,7 @@ def plot_metric(metric, ylabel, filename, *, log_scale=False):
                     color=color,
                     linestyle=linestyle,
                     linewidth=1.5,
-                    label=f"{solver} ({coord_label})",
+                    label=f"{solver} ({legend_label})",
                 )
                 ax.fill_between(epochs, q25, q75, color=color, alpha=0.15)
         ax.grid(True, which="both", alpha=0.3)
@@ -307,11 +334,11 @@ def plot_metric(metric, ylabel, filename, *, log_scale=False):
 
     if log_scale:
         axes[0].set_yscale("log")
-        axes[0].set_ylim(bottom=1e-5)
+        # axes[0].set_ylim(bottom=1e-8)
 
-    fig.supxlabel("Epochs")
-    fig.supylabel(ylabel)
-    fig.suptitle(f"TinyMNIST batch-size ablation: {ylabel}")
+    fig.supxlabel("Epochs", fontsize=AXIS_LABEL_FONTSIZE)
+    fig.supylabel(ylabel, fontsize=AXIS_LABEL_FONTSIZE)
+    # fig.suptitle(f"TinyMNIST batch-size ablation: {ylabel}")
 
     # Build a single, common legend rather than repeating it in four panels.
     legend_entries = {}
@@ -319,15 +346,18 @@ def plot_metric(metric, ylabel, filename, *, log_scale=False):
         handles, labels = ax.get_legend_handles_labels()
         for handle, label in zip(handles, labels):
             legend_entries.setdefault(label, handle)
+        ax.spines[["right", "top"]].set_visible(False)
+        ax.tick_params(axis="both", which="major", labelsize=TICK_FONTSIZE)
     fig.legend(
         legend_entries.values(),
         legend_entries.keys(),
-        loc="lower center",
-        ncol=4,
-        bbox_to_anchor=(0.5, 0.005),
+        loc="lower right",
+        ncol=1,
+        bbox_to_anchor=(0.9, 0.1),
         frameon=False,
+        fontsize=LEGEND_FONTSIZE,
     )
-    fig.tight_layout(rect=(0.02, 0.065, 1.0, 0.95))
+    fig.tight_layout()  # rect=(0.02, 0.065, 1.0, 0.95))
 
     FIGURE_DIR.mkdir(parents=True, exist_ok=True)
     path = FIGURE_DIR / filename
@@ -342,6 +372,12 @@ def make_figures():
         "train_loss",
         "Training Loss",
         "tinyMNIST_batch_ablation_training_loss.pdf",
+        log_scale=True,
+    )
+    plot_metric(
+        "val_loss",
+        "Validation Loss",
+        "tinyMNIST_batch_ablation_validation_loss.pdf",
         log_scale=True,
     )
     plot_metric(

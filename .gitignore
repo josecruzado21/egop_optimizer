@@ -79,3 +79,4 @@ results/figures/*
 *.pdf
 /experiments/figures
 TODO.txt
+experiments/merge_tinyMNIST_logs.py
