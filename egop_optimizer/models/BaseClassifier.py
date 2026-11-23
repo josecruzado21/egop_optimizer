@@ -243,8 +243,10 @@ class ReparamBaseClassifier(BaseClassifier):
                     # W: [out_ch, in_ch, kH, kW]
                     # Per filter b: W_eff[b] = V_prev @ W_stored[b]
                     #               W_new_stored[b] = V_new.T @ W_eff[b]
-                    W_flat = W.view(W.shape[0], -1).unsqueeze(-1)       # [out_ch, D, 1]
-                    W_orig = torch.matmul(V_prev, W_flat).view_as(W)    # [out_ch, in_ch, kH, kW]
+                    W_flat = W.view(W.shape[0], -1).unsqueeze(-1)  # [out_ch, D, 1]
+                    W_orig = torch.matmul(V_prev, W_flat).view_as(
+                        W
+                    )  # [out_ch, in_ch, kH, kW]
                     W_new_stored = torch.matmul(
                         V_new.T, W_orig.view(W.shape[0], -1).unsqueeze(-1)
                     ).view_as(W)
@@ -263,6 +265,71 @@ class ReparamBaseClassifier(BaseClassifier):
                     module.V_inv = V_new.T
 
         self.V_by_layer_dict = V_new_dict
+
+    def update_reparam_momentum(
+        self, V_prev_dict, V_new_dict, optimizer_state_dictionary
+    ):
+        """
+        GOAL: Take in existing momentum from optimizer and apply transformation V_1^T V_0
+
+        Return a new optimizer_state_dictionary
+        """
+        with torch.no_grad():
+            for name, module in self.named_modules():
+                if name not in V_prev_dict or name not in V_new_dict:
+                    continue
+                V_prev = V_prev_dict[name].to(module.weight.device)
+                V_new = V_new_dict[name].to(module.weight.device)
+                W = module.weight.data
+                # Extract momentum object corresponding to this module
+                # optimizer_state_dictionary should have objects associated with this module and
+                # momentum will be one of them
+                # M = optimizer_state_dictionary[module].momentum
+
+                if isinstance(module, EGOP_conv2d_layer):
+                    # Possible that we'll need reshaping for convolutional layers
+                    # W: [out_ch, in_ch, kH, kW]
+                    # Per filter b: W_eff[b] = V_prev @ W_stored[b]
+                    #               W_new_stored[b] = V_new.T @ W_eff[b]
+                    W_flat = W.view(W.shape[0], -1).unsqueeze(-1)  # [out_ch, D, 1]
+
+                    # First: something like
+                    #  M_orig = torch.matmul(V_prev, M_flat).view_as(M)
+                    # Applies the first step M_orig = V_0 M
+                    W_orig = torch.matmul(V_prev, W_flat).view_as(
+                        W
+                    )  # [out_ch, in_ch, kH, kW]
+
+                    # Second: something like
+                    #  M_new = torch.matmul(V_new.T, M_orig)
+                    # Applies the second step M_new = V_1^T M_orig
+                    W_new_stored = torch.matmul(
+                        V_new.T, W_orig.view(W.shape[0], -1).unsqueeze(-1)
+                    ).view_as(W)
+                    module.weight.data.copy_(W_new_stored)
+                    module.V = V_new
+
+                elif isinstance(module, EGOP_linear_layer):
+                    # W: [out_features, in_features], V: [D, D] where D = out*in
+                    # W_eff_flat = V_prev @ W_flat
+                    # W_new_flat = V_new.T @ W_eff_flat
+                    W_flat = W.flatten()
+
+                    # First: something like
+                    #  M_orig = torch.matmul(V_prev, M_flat)
+                    # Applies the first step M_orig = V_0 M
+                    W_orig_flat = torch.matmul(V_prev, W_flat)
+
+                    # Second: something like
+                    #  M_new = torch.matmul(V_new.T, M_orig)
+                    # Applies the second step M_new = V_1^T M_orig
+                    W_new_flat = torch.matmul(V_new.T, W_orig_flat)
+                    module.weight.data.copy_(W_new_flat.view_as(W))
+                    module.V = V_new
+                    module.V_inv = V_new.T
+
+                # Save new momentum into an appropriate new state dictionary
+        return  # Return the new state dictionary
 
     def restore_V_from_dict(self, V_dict):
         """

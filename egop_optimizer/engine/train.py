@@ -12,14 +12,8 @@ from egop_optimizer.utils.EGOP_utils import compute_V_by_layer
 
 DEVICE = get_available_device()
 
-def save_checkpoint(
-    model,
-    optimizer,
-    epoch,
-    path,
-    scheduler=None,
-    metrics=None
-):
+
+def save_checkpoint(model, optimizer, epoch, path, scheduler=None, metrics=None):
 
     checkpoint = {
         "epoch": epoch,
@@ -37,6 +31,7 @@ def save_checkpoint(
         checkpoint["V_by_layer_dict"] = model.V_by_layer_dict
 
     torch.save(checkpoint, path)
+
 
 def load_checkpoint(model, optimizer, path, scheduler=None, device=DEVICE):
 
@@ -58,9 +53,21 @@ def load_checkpoint(model, optimizer, path, scheduler=None, device=DEVICE):
     val_times = checkpoint.get("val_times", [])
     V_by_layer_dict = checkpoint.get("V_by_layer_dict", None)
 
-    return start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times, V_by_layer_dict
+    return (
+        start_epoch,
+        train_losses,
+        train_accuracies,
+        train_times,
+        val_losses,
+        val_accuracies,
+        val_times,
+        V_by_layer_dict,
+    )
 
-def compute_validation_loss(model, sum_loss_fn, valloader, device=DEVICE, ten_crop=False):
+
+def compute_validation_loss(
+    model, sum_loss_fn, valloader, device=DEVICE, ten_crop=False
+):
     """
     Evaluates the model on a validation dataset and computes the average loss and accuracy.
 
@@ -107,10 +114,10 @@ def basic_train_loop(
     testloader=None,
     device=DEVICE,
     experiment_name="default",
-    ten_crop = False,
-    report_validation_metrics = True,
-    checkpoint = True,
-    initial_metrics = True,
+    ten_crop=False,
+    report_validation_metrics=True,
+    checkpoint=True,
+    initial_metrics=True,
     V_recalc_freq=None,
     model_OG=None,
     k=1000,
@@ -119,28 +126,28 @@ def basic_train_loop(
     n_components=None,
 ):
     """
-   Runs a basic training loop for a PyTorch model, with optional validation and logging.
+    Runs a basic training loop for a PyTorch model, with optional validation and logging.
 
-    Args:
-        model (torch.nn.Module): The model to train.
-        trainloader (DataLoader): DataLoader for the training dataset.
-        optimizer (torch.optim.Optimizer): Optimizer for model parameters.
-        epochs (int): Number of training epochs.
-        loss_method (callable): Loss function constructor, must accept a 'reduction' argument.
-        LR_scheduler (optional): Learning rate scheduler (currently not supported).
-        valloader (DataLoader, optional): DataLoader for the validation dataset.
-        device (torch.device, optional): Device to use for training. Defaults to DEVICE.
-        experiment_name (str, optional): Name for the experiment/log directory. Defaults to "default".
-        ten_crop (bool, optional): If True, uses 10-crop evaluation for validation. Defaults to False.
-        report_validation_metrics (bool, optional): If True, computes and logs validation metrics. Defaults to True.
+     Args:
+         model (torch.nn.Module): The model to train.
+         trainloader (DataLoader): DataLoader for the training dataset.
+         optimizer (torch.optim.Optimizer): Optimizer for model parameters.
+         epochs (int): Number of training epochs.
+         loss_method (callable): Loss function constructor, must accept a 'reduction' argument.
+         LR_scheduler (optional): Learning rate scheduler (currently not supported).
+         valloader (DataLoader, optional): DataLoader for the validation dataset.
+         device (torch.device, optional): Device to use for training. Defaults to DEVICE.
+         experiment_name (str, optional): Name for the experiment/log directory. Defaults to "default".
+         ten_crop (bool, optional): If True, uses 10-crop evaluation for validation. Defaults to False.
+         report_validation_metrics (bool, optional): If True, computes and logs validation metrics. Defaults to True.
 
-    Logs:
-        - Training and validation loss and accuracy per epoch.
-        - Training and validation time per epoch.
-        - Experiment setup information.
+     Logs:
+         - Training and validation loss and accuracy per epoch.
+         - Training and validation time per epoch.
+         - Experiment setup information.
 
-    Returns:
-        None
+     Returns:
+         None
     """
     log_dir = f"logs/{experiment_name}"
     # suffix = 0
@@ -161,14 +168,18 @@ def basic_train_loop(
     info_logger = logging.getLogger("info_logger")
     info_logger.setLevel(logging.INFO)
     info_handler = logging.FileHandler(info_log_path)
-    info_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    info_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    )
     info_logger.handlers = [info_handler]
 
     # Training logger (training progress)
     training_logger = logging.getLogger("training_logger")
     training_logger.setLevel(logging.INFO)
     training_handler = logging.FileHandler(training_log_path)
-    training_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    training_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    )
     training_logger.handlers = [training_handler, logging.StreamHandler()]
 
     # Log experiment info
@@ -191,12 +202,17 @@ def basic_train_loop(
     val_times = []
 
     if checkpoint and os.path.exists(latest_ckpt):
-        start_epoch, train_losses, train_accuracies, train_times, val_losses, val_accuracies, val_times, ckpt_V_dict = load_checkpoint(
-            model,
-            optimizer,
-            latest_ckpt,
-            scheduler=LR_scheduler,
-            device=device
+        (
+            start_epoch,
+            train_losses,
+            train_accuracies,
+            train_times,
+            val_losses,
+            val_accuracies,
+            val_times,
+            ckpt_V_dict,
+        ) = load_checkpoint(
+            model, optimizer, latest_ckpt, scheduler=LR_scheduler, device=device
         )
         if ckpt_V_dict is not None and hasattr(model, "restore_V_from_dict"):
             model.restore_V_from_dict(ckpt_V_dict)
@@ -212,10 +228,10 @@ def basic_train_loop(
     # --- Initial metrics reporting ---
     initial_train_loss = initial_train_acc = initial_val_loss = initial_val_acc = None
     if initial_metrics:
-        # The reason why we have model.train() for the initial training metrics is to ensure that any 
-        # layers that behave differently during training (like dropout or batch normalization) are in 
-        # the correct mode when we compute the initial training loss and accuracy. 
-        # This way, we get a more accurate representation of the model's performance on the training 
+        # The reason why we have model.train() for the initial training metrics is to ensure that any
+        # layers that behave differently during training (like dropout or batch normalization) are in
+        # the correct mode when we compute the initial training loss and accuracy.
+        # This way, we get a more accurate representation of the model's performance on the training
         # data before any updates are made.
         if start_epoch == 1:
             model.train()
@@ -225,7 +241,9 @@ def basic_train_loop(
             total_train_loss = 0.0
             total_train, correct_train = 0, 0
             for batch_data, batch_labels in tqdm(trainloader, leave=False):
-                batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
+                batch_data, batch_labels = batch_data.to(device), batch_labels.to(
+                    device
+                )
                 output = model(batch_data)
                 total_train_loss += sum_loss_fn(output, batch_labels).item()
                 _, predicted = torch.max(output, 1)
@@ -240,7 +258,9 @@ def basic_train_loop(
 
         # Compute initial validation metrics if valloader is provided
         if valloader is not None:
-            initial_val_loss, initial_val_acc = compute_validation_loss(model, sum_loss_fn, valloader, device, ten_crop)
+            initial_val_loss, initial_val_acc = compute_validation_loss(
+                model, sum_loss_fn, valloader, device, ten_crop
+            )
             training_logger.info(
                 f"Initial Validation Loss = {initial_val_loss:.2f}, Initial Validation Acc. = {initial_val_acc:.4f}\n"
             )
@@ -258,7 +278,9 @@ def basic_train_loop(
                 batch_data.device.type != device.type
                 or batch_labels.device.type != device.type
             ):
-                batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
+                batch_data, batch_labels = batch_data.to(device), batch_labels.to(
+                    device
+                )
             optimizer.zero_grad()
             output = model(batch_data)
             batch_loss = ave_loss_fn(output, batch_labels)
@@ -280,7 +302,9 @@ def basic_train_loop(
         # Eval model
         if report_validation_metrics and valloader is not None:
             val_start = time.time()
-            epoch_val_loss, val_acc = compute_validation_loss(model, sum_loss_fn, valloader, device, ten_crop)
+            epoch_val_loss, val_acc = compute_validation_loss(
+                model, sum_loss_fn, valloader, device, ten_crop
+            )
             val_losses.append(epoch_val_loss)
             val_accuracies.append(val_acc)
             val_end = time.time()
@@ -296,7 +320,6 @@ def basic_train_loop(
                 f"Epoch {t}: Training Loss = {epoch_loss:.10f}, Training Acc. = {train_acc:.10f}, "
                 f"Training Time = {train_duration:.2f}s"
             )
-        
 
         if (
             V_recalc_freq is not None
@@ -304,9 +327,15 @@ def basic_train_loop(
             and hasattr(model, "update_reparam_weights")
             and t % V_recalc_freq == 0
         ):
-            training_logger.info(f"Epoch {t}: recomputing EGOP basis (V_recalc_freq={V_recalc_freq})...")
+            training_logger.info(
+                f"Epoch {t}: recomputing EGOP basis (V_recalc_freq={V_recalc_freq})..."
+            )
             reparam_start = time.time()
-            V_prev_dict = {name: module.V.clone() for name, module in model.named_modules() if hasattr(module, "V")}
+            V_prev_dict = {
+                name: module.V.clone()
+                for name, module in model.named_modules()
+                if hasattr(module, "V")
+            }
             new_V_dict = compute_V_by_layer(
                 model_OG=model_OG,
                 k=k,
@@ -321,6 +350,11 @@ def basic_train_loop(
             )
             new_V_dict = {name: V.to(device) for name, V in new_V_dict.items()}
             model.update_reparam_weights(V_prev_dict, new_V_dict)
+            # Here: need to update_reparam_momentum based on the same rule V_1^T V_0 m_t
+            # new_optimizer_state_dict = model.update_reparam_momentum(V_prev_dict, new_V_dict, optimizer.state_dict)
+            # Perform the update:
+            # optimzier.state_dict = new_optimizer_state_dict
+            # Leave the second moment estimates in-place
             model.zero_grad()
             reparam_dur = round((time.time() - reparam_start) / 60, 2)
             training_logger.info(f"Epoch {t}: basis updated in {reparam_dur:.2f}m")
@@ -339,19 +373,31 @@ def basic_train_loop(
                     "val_losses": val_losses,
                     "val_accuracies": val_accuracies,
                     "val_times": val_times,
-                }
+                },
             )
 
     csv_path = os.path.join(log_dir, "metrics.csv")
     has_val = len(val_losses) > 0
-    fieldnames = ["experiment_id", "epoch", "train_loss", "train_accuracy", "train_time_min"]
+    fieldnames = [
+        "experiment_id",
+        "epoch",
+        "train_loss",
+        "train_accuracy",
+        "train_time_min",
+    ]
     if has_val:
         fieldnames += ["val_loss", "val_accuracy", "val_time_min"]
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, restval="")
         writer.writeheader()
         if start_epoch == 1 and initial_train_loss is not None:
-            row0 = {"experiment_id": experiment_name, "epoch": 0, "train_loss": initial_train_loss, "train_accuracy": initial_train_acc, "train_time_min": ""}
+            row0 = {
+                "experiment_id": experiment_name,
+                "epoch": 0,
+                "train_loss": initial_train_loss,
+                "train_accuracy": initial_train_acc,
+                "train_time_min": "",
+            }
             if has_val and initial_val_loss is not None:
                 row0["val_loss"] = initial_val_loss
                 row0["val_accuracy"] = initial_val_acc
