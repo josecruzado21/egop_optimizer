@@ -5,6 +5,7 @@ import random
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from matplotlib.patches import ConnectionPatch, Rectangle
 
@@ -139,6 +140,7 @@ def estimate_global_egop(
     include_biases: bool = True,
     full_batch_gradients: bool = FULL_BATCH_GRADIENTS,
     gaussian_variance: float = GAUSSIAN_VARIANCE,
+    parameter_sampler: Callable[[torch.nn.Module], None] | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[dict]]:
     """Compute the global EGOP and return (Lambda, V, EGOP, slices).
 
@@ -151,6 +153,11 @@ def estimate_global_egop(
 
         EGOP_sum += G_chunk @ G_chunk.T.
 
+    If parameter_sampler is supplied, it is called once per gradient sample
+    instead of the built-in Gaussian reinitialization. This lets callers use
+    default initialization, uniform-ball samples, or other distributions.
+    When parameter_sampler is omitted, Gaussian sampling is unchanged.
+
     Divide by num_samples after all complete and partial chunks have been
     added; this preserves cross-parameter and cross-layer correlations.
     The full EGOP, eigenvalues and eigenvectors are on CPU in EVD_DTYPE
@@ -160,7 +167,9 @@ def estimate_global_egop(
         raise ValueError("num_samples must be positive")
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    if not np.isfinite(gaussian_variance) or gaussian_variance <= 0:
+    if parameter_sampler is None and (
+        not np.isfinite(gaussian_variance) or gaussian_variance <= 0
+    ):
         raise ValueError("gaussian_variance must be positive and finite")
     if not hasattr(model, "reinitialize"):
         raise TypeError("Expected the OG model to provide its reinitialize() method")
@@ -189,8 +198,12 @@ def estimate_global_egop(
         flush=True,
     )
     for sample_idx in tqdm(range(num_samples), desc="Global EGOP gradients"):
-        # Match the existing EGOP utility: fresh weights for every draw.
-        model.reinitialize(sampling_scale=gaussian_variance**0.5)
+        # Fresh parameters for every draw. Custom samplers can initialize the
+        # entire concatenated parameter vector jointly (e.g. uniform ball).
+        if parameter_sampler is None:
+            model.reinitialize(sampling_scale=gaussian_variance**0.5)
+        else:
+            parameter_sampler(model)
         model.zero_grad(set_to_none=True)
 
         if full_batch_gradients:
